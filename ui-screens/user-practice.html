@@ -1,0 +1,771 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vocal Practice - 練習介面</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #1a1a2e; color: #eee; min-height: 100vh;
+        }
+        .header {
+            background: #16213e; padding: 16px 24px;
+            display: flex; justify-content: space-between; align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .header h1 { font-size: 20px; color: #fff; }
+        .header-right { display: flex; align-items: center; gap: 16px; }
+        .user-info { display: flex; align-items: center; gap: 8px; }
+        .user-avatar {
+            width: 36px; height: 36px; border-radius: 50%;
+            background: #3498db; display: flex; align-items: center; justify-content: center; font-weight: 600;
+        }
+        .btn {
+            padding: 8px 16px; border: none; border-radius: 6px;
+            cursor: pointer; font-size: 14px; transition: all 0.2s;
+        }
+        .btn-primary { background: #3498db; color: white; }
+        .btn-primary:hover { background: #2980b9; }
+        .btn-success { background: #27ae60; color: white; }
+        .btn-success:hover { background: #219653; }
+        .btn-danger { background: #e74c3c; color: white; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-warning { background: #f39c12; color: white; }
+        .btn-warning:hover { background: #e67e22; }
+        .btn-lg { padding: 14px 32px; font-size: 16px; }
+        .btn-sm { padding: 6px 12px; font-size: 12px; }
+        .btn-play {
+            background: #1abc9c; color: white; border: none;
+            padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-left: 8px;
+        }
+        .btn-play:hover { background: #16a085; }
+        .main-container {
+            display: grid; grid-template-columns: 320px 1fr;
+            gap: 24px; padding: 24px; max-width: 1400px; margin: 0 auto;
+        }
+        .sidebar { background: #16213e; border-radius: 12px; padding: 20px; height: fit-content; }
+        .sidebar h3 { font-size: 14px; color: #888; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+        .song-info { background: #1a1a2e; border-radius: 8px; padding: 16px; margin-bottom: 20px; }
+        .song-title { font-size: 18px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+        .song-artist { font-size: 14px; color: #888; }
+        .track-selector { margin-bottom: 20px; }
+        .track-option {
+            display: flex; align-items: center; padding: 10px 12px;
+            background: #1a1a2e; border-radius: 8px; margin-bottom: 8px;
+            cursor: pointer; transition: all 0.2s; border: 2px solid transparent;
+        }
+        .track-option:hover { background: #1e2a4a; }
+        .track-option.selected { border-color: #3498db; background: #1e2a4a; }
+        .track-option input[type="radio"] { margin-right: 12px; }
+        .track-name { flex: 1; font-size: 14px; }
+        .track-badge {
+            padding: 2px 8px; border-radius: 4px; font-size: 11px; background: #2c3e50; color: #888;
+        }
+        .track-badge.has-structure { background: #27ae60; color: white; }
+        .structure-selector { margin-bottom: 20px; }
+        .structure-option {
+            display: flex; align-items: center; padding: 10px 12px;
+            background: #1a1a2e; border-radius: 8px; margin-bottom: 4px;
+            cursor: pointer; transition: all 0.2s; border: 2px solid transparent;
+        }
+        .structure-option:hover { background: #1e2a4a; }
+        .structure-option.selected { border-color: #27ae60; background: #1a3a2e; }
+        .structure-option.phrased { padding-left: 36px; }
+        .structure-icon { margin-right: 8px; font-size: 14px; }
+        .structure-name { flex: 1; font-size: 14px; }
+        .structure-time { font-size: 12px; color: #666; margin-right: 8px; }
+        .range-info { font-size: 13px; padding: 8px 0; color: #888; }
+        .range-actions { display: flex; gap: 8px; margin-top: 8px; }
+        .content-area { display: flex; flex-direction: column; gap: 24px; }
+        .visualization-area { background: #16213e; border-radius: 12px; padding: 24px; }
+        .viz-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .viz-title { font-size: 16px; font-weight: 600; }
+        .viz-tabs { display: flex; gap: 8px; }
+        .viz-tab {
+            padding: 6px 12px; background: #1a1a2e; border: none; border-radius: 4px;
+            color: #888; cursor: pointer; font-size: 13px; transition: all 0.2s;
+        }
+        .viz-tab:hover { color: #fff; }
+        .viz-tab.active { background: #3498db; color: white; }
+        .chart-container {
+            background: #1a1a2e; border-radius: 8px; height: 300px;
+            display: flex; align-items: center; justify-content: center; color: #555; font-size: 14px;
+        }
+        .controls-area {
+            background: #16213e; border-radius: 12px; padding: 24px;
+            display: flex; align-items: center; justify-content: center; gap: 24px;
+        }
+        .record-btn {
+            width: 80px; height: 80px; border-radius: 50%;
+            background: #e74c3c; border: 4px solid #c0392b;
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            transition: all 0.2s; box-shadow: 0 4px 15px rgba(231,76,60,0.4);
+        }
+        .record-btn:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(231,76,60,0.6); }
+        .record-icon { width: 30px; height: 30px; fill: white; }
+        .control-info { text-align: center; }
+        .control-status { font-size: 18px; font-weight: 600; color: #fff; margin-bottom: 4px; }
+        .control-timer { font-size: 32px; font-weight: 700; color: #3498db; font-variant-numeric: tabular-nums; }
+        .results-panel { background: #16213e; border-radius: 12px; padding: 24px; display: none; }
+        .results-panel.visible { display: block; }
+        .results-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+        .result-stat { background: #1a1a2e; border-radius: 8px; padding: 16px; text-align: center; }
+        .result-stat-value { font-size: 24px; font-weight: 600; color: #3498db; }
+        .result-stat-label { font-size: 12px; color: #888; margin-top: 4px; }
+        .no-structures {
+            text-align: center; padding: 30px; color: #666;
+        }
+        .loading-spinner {
+            text-align: center; padding: 20px; color: #888;
+        }
+        .loading-spinner::after {
+            content: '⏳'; animation: spin 1s linear infinite;
+        }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎤 Vocal Practice</h1>
+        <div class="header-right">
+            <div class="user-info">
+                <div class="user-avatar">S</div>
+                <span id="username-display">singer01</span>
+            </div>
+            <button class="btn btn-primary" onclick="alert('歷史記錄功能開發中')">歷史記錄</button>
+            <button class="btn btn-danger" onclick="logout()">登出</button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <!-- 左側邊欄 -->
+        <div class="sidebar">
+            <div class="song-info" id="song-info">
+                <div class="song-title" id="song-title">請選擇歌曲</div>
+                <div class="song-artist" id="song-artist"></div>
+            </div>
+
+            <h3>選擇歌曲</h3>
+            <div class="track-selector">
+                <select id="song-select" onchange="onSongChange()" style="width:100%;padding:10px;background:#1a1a2e;color:#eee;border:1px solid #333;border-radius:6px;">
+                    <option value="">載入中...</option>
+                </select>
+            </div>
+
+            <h3>練習聲部（單選）</h3>
+            <div id="vocal-tracks">
+                <div class="loading-spinner">載入音軌中...</div>
+            </div>
+
+            <h3>段落與句子</h3>
+            <div id="structure-list">
+                <div class="no-structures">請先選擇歌曲與聲部</div>
+            </div>
+
+            <div id="range-info" class="range-info">選擇一個段落或句子開始練習</div>
+            <div id="range-actions" class="range-actions" style="display:none;">
+                <button class="btn btn-sm btn-success" onclick="startPractice()">🎯 開始練習此範圍</button>
+                <button class="btn btn-sm btn-secondary" onclick="clearSelection()" style="background:#555;color:#fff;">清除</button>
+            </div>
+        </div>
+
+        <!-- 主要內容區 -->
+        <div class="content-area">
+            <div class="visualization-area">
+                <div class="viz-header">
+                    <span class="viz-title">分析視覺化</span>
+                    <div class="viz-tabs">
+                        <button class="viz-tab active" onclick="switchTab(this, 'pitch')">音高曲線</button>
+                        <button class="viz-tab" onclick="switchTab(this, 'pitchroll')">鋼琴捲軸</button>
+                    </div>
+                </div>
+                <div class="chart-container" id="chart-area">
+                    <div>
+                        <div style="font-size:48px;margin-bottom:12px;">🎵</div>
+                        <div>請先選擇歌曲與練習範圍</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="controls-area">
+                <div class="control-info">
+                    <div class="control-status" id="status-text">準備就緒</div>
+                    <div class="control-timer" id="timer">00:00</div>
+                </div>
+                <button class="record-btn" id="record-btn" onclick="togglePlayback()">
+                    <svg class="record-icon" viewBox="0 0 24 24">
+                        <polygon points="8,5 19,12 8,19" fill="white"/>
+                    </svg>
+                </button>
+                <div class="control-info">
+                    <div style="font-size:12px;color:#888;">當前練習</div>
+                    <div id="current-range-label" style="font-size:14px;color:#fff;">未選擇</div>
+                </div>
+            </div>
+
+            <div class="results-panel" id="results-panel">
+                <div class="results-grid">
+                    <div class="result-stat">
+                        <div class="result-stat-value" id="result-matched">-/-</div>
+                        <div class="result-stat-label">音符匹配</div>
+                    </div>
+                    <div class="result-stat">
+                        <div class="result-stat-value" id="result-pitch">-</div>
+                        <div class="result-stat-label">平均音高偏差</div>
+                    </div>
+                    <div class="result-stat">
+                        <div class="result-stat-value" id="result-duration">-</div>
+                        <div class="result-stat-label">平均時長偏差</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1';
+
+        // --- State ---
+        let currentSongId = null;
+        let currentSongFull = null; // full song with tempo_map etc
+        let structures = [];
+        let selectedTrackId = null;
+        let selectedStructure = null; // { id, start, end, title }
+        let midiData = null;
+        let parsedNotes = null;       // all parsed notes from MIDI, each has .track index
+        let referenceNotes = null;    // filtered notes for the selected track+section
+        let allTracksMeta = [];       // meta info from GET /songs/:id to map track index to UUID
+        let parsedTrackIndex = null;  // which parsedNotes track index corresponds to selectedTrackId
+        let parsedMIDITracks = [];    // track info from MIDI parsing (name, track index)
+
+        // --- Audio playback ---
+        let audioCtx = null;
+        let playbackNodes = [];
+        let playbackTimer = null;
+        let isPlaying = false;
+
+        function getAudioCtx() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            return audioCtx;
+        }
+
+        function parseMIDINotes(midiArrayBuf) {
+            const data = new Uint8Array(midiArrayBuf);
+            const head = String.fromCharCode(data[0], data[1], data[2], data[3]);
+            if (head !== 'MThd') throw new Error('Not a MIDI file');
+            const format = (data[8] << 8) | data[9];
+            const numTracks = (data[10] << 8) | data[11];
+            const ticksPerQN = (data[12] << 8) | data[13];
+            let offset = 14;
+
+            function readVarLen(arr, pos) {
+                let value = 0, i = 0;
+                while (true) {
+                    value = (value << 7) | (arr[pos + i] & 0x7F);
+                    if (!(arr[pos + i] & 0x80)) break;
+                    i++;
+                }
+                return { value, size: i + 1 };
+            }
+
+            // --- Step 1: Build tempo map from all tracks ---
+            const rawTempos = [];
+            for (let t = 0; t < numTracks; t++) {
+                if (offset + 8 > data.length) break;
+                const chunkId = String.fromCharCode(data[offset], data[offset+1], data[offset+2], data[offset+3]);
+                if (chunkId !== 'MTrk') break;
+                const chunkLen = (data[offset+4] << 24) | (data[offset+5] << 16) | (data[offset+6] << 8) | data[offset+7];
+                offset += 8;
+                const end = offset + chunkLen;
+                let absTick = 0, runningStatus = 0;
+
+                while (offset < end) {
+                    const { value: delta, size: deltaSize } = readVarLen(data, offset);
+                    offset += deltaSize; absTick += delta;
+                    if (offset >= end) break;
+
+                    let status = data[offset];
+                    if (status >= 0x80) { runningStatus = status; offset++; }
+                    else if (runningStatus !== 0) { status = runningStatus; }
+                    else { offset++; continue; }
+
+                    if (status === 0xFF) {
+                        runningStatus = 0;
+                        if (offset >= end) break;
+                        const metaType = data[offset]; offset++;
+                        const { value: metaLen, size: metaLenSize } = readVarLen(data, offset);
+                        offset += metaLenSize;
+                        if (metaType === 0x51 && metaLen >= 3 && offset + metaLen <= end) {
+                            const usPerQN = (data[offset] << 16) | (data[offset+1] << 8) | data[offset+2];
+                            rawTempos.push({ tick: absTick, usPerQN });
+                        }
+                        offset += metaLen;
+                        continue;
+                    }
+                    if (status === 0xF0 || status === 0xF7) {
+                        runningStatus = 0;
+                        const { value: sysexLen, size: sysexLenSize } = readVarLen(data, offset);
+                        offset += sysexLenSize + sysexLen; continue;
+                    }
+
+                    const highNibble = status & 0xF0;
+                    switch (highNibble) {
+                        case 0x80: case 0x90: case 0xA0: case 0xB0: case 0xE0: offset += 2; break;
+                        case 0xC0: case 0xD0: offset += 1; break;
+                        default: break;
+                    }
+                }
+            }
+
+            // Sort and deduplicate tempo map
+            rawTempos.sort((a, b) => a.tick - b.tick);
+            const tempoMap = [];
+            for (const t of rawTempos) {
+                if (tempoMap.length === 0 || tempoMap[tempoMap.length - 1].tick !== t.tick) {
+                    tempoMap.push(t);
+                }
+            }
+
+            // --- Step 2: tickToSec helper using tempo map ---
+            function tickToSec(tick) {
+                // Find the tempo segment for this tick
+                let i = 0;
+                for (let j = tempoMap.length - 1; j >= 0; j--) {
+                    if (tempoMap[j].tick <= tick) { i = j; break; }
+                }
+                let timeSec = 0;
+                let prevTick = 0;
+                // Use initial tempo if map is empty, otherwise start with first entry
+                let prevTempo = tempoMap.length > 0 ? tempoMap[0].usPerQN : 500000;
+                for (let k = 1; k <= i; k++) {
+                    const dt = tempoMap[k].tick - prevTick;
+                    timeSec += dt * (prevTempo / (ticksPerQN * 1000000));
+                    prevTick = tempoMap[k].tick;
+                    prevTempo = tempoMap[k].usPerQN;
+                }
+                const dt = tick - prevTick;
+                timeSec += dt * (prevTempo / (ticksPerQN * 1000000));
+                return timeSec;
+            }
+
+            // --- Step 3: Parse notes (second pass over tracks) ---
+            offset = 14;
+            const allNotes = [];
+            for (let t = 0; t < numTracks; t++) {
+                if (offset + 8 > data.length) break;
+                const chunkId = String.fromCharCode(data[offset], data[offset+1], data[offset+2], data[offset+3]);
+                if (chunkId !== 'MTrk') break;
+                const chunkLen = (data[offset+4] << 24) | (data[offset+5] << 16) | (data[offset+6] << 8) | data[offset+7];
+                offset += 8;
+                const end = offset + chunkLen;
+                let absTick = 0, runningStatus = 0;
+
+                while (offset < end) {
+                    const { value: delta, size: deltaSize } = readVarLen(data, offset);
+                    offset += deltaSize; absTick += delta;
+                    if (offset >= end) break;
+
+                    let status = data[offset];
+                    if (status >= 0x80) { runningStatus = status; offset++; }
+                    else if (runningStatus !== 0) { status = runningStatus; }
+                    else { offset++; continue; }
+
+                    if (status === 0xFF) {
+                        runningStatus = 0; offset++;
+                        const { value: metaLen, size: metaLenSize } = readVarLen(data, offset);
+                        offset += metaLenSize + metaLen; continue;
+                    }
+                    if (status === 0xF0 || status === 0xF7) {
+                        runningStatus = 0;
+                        const { value: sysexLen, size: sysexLenSize } = readVarLen(data, offset);
+                        offset += sysexLenSize + sysexLen; continue;
+                    }
+
+                    const highNibble = status & 0xF0;
+                    if (highNibble === 0x90 || highNibble === 0x80) {
+                        const pitch = data[offset], velocity = data[offset+1]; offset += 2;
+                        if (highNibble === 0x90 && velocity > 0) {
+                            allNotes.push({ pitch, tick: absTick, track: t });
+                        } else {
+                            for (let i = allNotes.length - 1; i >= 0; i--) {
+                                if (allNotes[i].pitch === pitch && allNotes[i].endTick === undefined && allNotes[i].track === t) {
+                                    allNotes[i].endTick = absTick; break;
+                                }
+                            }
+                        }
+                        continue;
+                    }
+                    switch (highNibble) {
+                        case 0xA0: case 0xB0: case 0xE0: offset += 2; break;
+                        case 0xC0: case 0xD0: offset += 1; break;
+                        default: break;
+                    }
+                }
+            }
+
+            return allNotes.filter(n => n.endTick !== undefined && n.endTick > n.tick)
+                .map(n => ({
+                    pitch: n.pitch,
+                    start: tickToSec(n.tick),
+                    dur: tickToSec(n.endTick) - tickToSec(n.tick),
+                    track: n.track,
+                }))
+                .filter(n => n.dur > 0.02);
+        }
+
+        function midiPitchToFreq(pitch) { return 440 * Math.pow(2, (pitch - 69) / 12); }
+
+        async function loadMIDI() {
+            if (!currentSongId) return;
+            try {
+                const res = await fetch(API_BASE + '/songs/' + currentSongId + '/midi', { credentials: 'same-origin' });
+                if (!res.ok) throw new Error('Failed to load MIDI');
+                midiData = await res.arrayBuffer();
+                parsedNotes = parseMIDINotes(midiData);
+            } catch (err) {
+                console.error('MIDI load error:', err);
+                midiData = null; parsedNotes = null;
+            }
+        }
+
+        function playRange(startTime, endTime) {
+            if (!parsedNotes || parsedNotes.length === 0) return;
+            stopPlayback();
+            const ctx = getAudioCtx();
+            const gainNode = ctx.createGain();
+            gainNode.gain.value = 0.3;
+            gainNode.connect(ctx.destination);
+            const dur = endTime - startTime;
+            const now = ctx.currentTime;
+            const rangeNotes = parsedNotes.filter(n => n.start >= startTime && n.start < endTime);
+
+            for (const n of rangeNotes) {
+                const osc = ctx.createOscillator();
+                const ng = ctx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.value = midiPitchToFreq(n.pitch);
+                const ls = n.start - startTime;
+                const nd = Math.min(n.dur, dur - ls);
+                if (nd <= 0.01) continue;
+                ng.gain.setValueAtTime(0, now + ls);
+                ng.gain.linearRampToValueAtTime(0.3, now + ls + 0.005);
+                ng.gain.setValueAtTime(0.3, now + ls + nd - 0.01);
+                ng.gain.linearRampToValueAtTime(0, now + ls + nd);
+                osc.connect(ng); ng.connect(gainNode);
+                osc.start(now + ls); osc.stop(now + ls + nd + 0.01);
+                playbackNodes.push(osc, ng);
+            }
+            playbackTimer = setTimeout(() => { isPlaying = false; updatePlayBtn(); stopPlayback(); }, dur * 1000 + 300);
+            isPlaying = true;
+            updatePlayBtn();
+        }
+
+        function stopPlayback() {
+            if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; }
+            for (const n of playbackNodes) { try { n.disconnect(); } catch(e) {} }
+            playbackNodes = [];
+            isPlaying = false;
+            updatePlayBtn();
+        }
+
+        function updatePlayBtn() {
+            const btn = document.getElementById('record-btn');
+            if (!btn) return;
+            if (isPlaying) {
+                btn.innerHTML = '<rect x="6" y="6" width="12" height="12" fill="white" style="transform: scale(0.8);"/>';
+                btn.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30"><rect x="6" y="6" width="5" height="12" fill="white"/><rect x="13" y="6" width="5" height="12" fill="white"/></svg>';
+            } else {
+                btn.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30"><polygon points="8,5 19,12 8,19" fill="white"/></svg>';
+            }
+        }
+
+        function togglePlayback() {
+            if (isPlaying) { stopPlayback(); return; }
+            if (selectedStructure) {
+                playRange(selectedStructure.start, selectedStructure.end);
+            } else {
+                alert('請先選擇一個段落或句子');
+            }
+        }
+
+        // --- API ---
+        async function api(path, options = {}) {
+            const res = await fetch(API_BASE + path, {
+                credentials: 'same-origin',
+                headers: { 'Content-Type': 'application/json' },
+                ...options,
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: res.statusText }));
+                throw new Error(err.error || `HTTP ${res.status}`);
+            }
+            return res.json();
+        }
+
+        function formatTime(sec) {
+            if (sec == null) return '0:00';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return m + ':' + s.toString().padStart(2, '0');
+        }
+
+        // --- Load songs dropdown ---
+        async function loadSongs() {
+            try {
+                const songs = await api('/songs');
+                const select = document.getElementById('song-select');
+                select.innerHTML = '<option value="">請選擇歌曲...</option>';
+                for (const s of songs) {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.title + ' - ' + (s.artist || '未知');
+                    select.appendChild(opt);
+                }
+            } catch (err) {
+                console.error('Failed to load songs:', err);
+            }
+        }
+
+        async function onSongChange() {
+            const select = document.getElementById('song-select');
+            currentSongId = select.value || null;
+            selectedStructure = null;
+            document.getElementById('range-actions').style.display = 'none';
+            document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
+
+            if (!currentSongId) {
+                document.getElementById('song-title').textContent = '請選擇歌曲';
+                document.getElementById('song-artist').textContent = '';
+                document.getElementById('vocal-tracks').innerHTML = '<div class="no-structures">請先選擇歌曲</div>';
+                document.getElementById('structure-list').innerHTML = '<div class="no-structures">請先選擇歌曲</div>';
+                return;
+            }
+
+            try {
+                const song = await api('/songs/' + currentSongId);
+                currentSongFull = song;
+                document.getElementById('song-title').textContent = song.title;
+                document.getElementById('song-artist').textContent = song.artist;
+
+                // Load MIDI for playback
+                await loadMIDI();
+
+                // Render tracks - show all tracks
+                renderTracks(song.tracks);
+
+                // Load structures for first track if available
+                if (song.tracks.length > 0) {
+                    selectedTrackId = song.tracks[0].id;
+                    selectTrack(song.tracks[0].id);
+                }
+            } catch (err) {
+                console.error('Failed to load song:', err);
+            }
+        }
+
+        function renderTracks(tracks) {
+            const container = document.getElementById('vocal-tracks');
+            if (!tracks || tracks.length === 0) {
+                container.innerHTML = '<div class="no-structures">此歌曲沒有音軌</div>';
+                return;
+            }
+
+            let html = '';
+            for (const t of tracks) {
+                const isSelected = t.id === selectedTrackId;
+                const badgeText = t.is_vocal ? '🎤 主旋律' : '🎵 伴奏';
+                html += `
+                    <div class="track-option ${isSelected ? 'selected' : ''}" onclick="selectTrack('${t.id}')">
+                        <input type="radio" name="vocal-track" ${isSelected ? 'checked' : ''}>
+                        <span class="track-name">${t.name}</span>
+                        <span class="track-badge has-structure">${badgeText}</span>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        function determineParsedTrackIndex() {
+            // parsedNotes uses MIDI track index (0..N-1).
+            // currentSongFull.tracks is in the same order as MIDI tracks.
+            // Find the index in currentSongFull.tracks that matches selectedTrackId.
+            if (!currentSongFull || !currentSongFull.tracks) return -1;
+            for (let i = 0; i < currentSongFull.tracks.length; i++) {
+                if (currentSongFull.tracks[i].id === selectedTrackId) {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        function generateReferenceData() {
+            // Build reference notes from parsed MIDI: filter by track + time range.
+            if (!parsedNotes || !selectedStructure || parsedTrackIndex < 0) {
+                referenceNotes = null;
+                return;
+            }
+            const start = selectedStructure.start;
+            const end = selectedStructure.end;
+            referenceNotes = parsedNotes.filter(n =>
+                n.track === parsedTrackIndex &&
+                n.start >= start - 0.05 && // small tolerance
+                n.start < end
+            ).map(n => ({
+                pitch: n.pitch,
+                start: n.start,
+                dur: Math.min(n.dur, end - n.start),
+            })).filter(n => n.dur > 0.02);
+            console.log(`Reference data: ${referenceNotes.length} notes from track ${parsedTrackIndex} [${start.toFixed(2)}-${end.toFixed(2)}]`);
+        }
+
+        async function selectTrack(trackId) {
+            selectedTrackId = trackId;
+            referenceNotes = null;
+            // Determine which MIDI track index corresponds to the selected UUID
+            parsedTrackIndex = determineParsedTrackIndex();
+            // Re-render with selection
+            if (currentSongFull && currentSongFull.tracks) {
+                renderTracks(currentSongFull.tracks);
+            }
+            await loadStructures(trackId);
+        }
+
+        async function loadStructures(trackId) {
+            if (!currentSongId) return;
+            const container = document.getElementById('structure-list');
+            container.innerHTML = '<div class="loading-spinner">載入段落結構...</div>';
+
+            try {
+                let path = '/songs/' + currentSongId + '/structures';
+                if (trackId) path += '?track_id=' + encodeURIComponent(trackId);
+                const data = await api(path);
+                structures = data.structures || [];
+                renderStructureList();
+            } catch (err) {
+                console.error('Failed to load structures:', err);
+                container.innerHTML = '<div class="no-structures">無法載入段落結構</div>';
+            }
+        }
+
+        function renderStructureList() {
+            const container = document.getElementById('structure-list');
+            if (!structures || structures.length === 0) {
+                container.innerHTML = '<div class="no-structures">此音軌尚無段落結構<br><small>請管理員在後台設定段落</small></div>';
+                return;
+            }
+
+            let html = '';
+            for (const s of structures) {
+                const isSelected = selectedStructure && selectedStructure.id === s.id;
+                html += `
+                    <div class="structure-option ${isSelected ? 'selected' : ''}" onclick="selectStructure('${s.id}')">
+                        <span class="structure-icon">📂</span>
+                        <span class="structure-name">${s.title}</span>
+                        <span class="structure-time">${formatTime(s.start_time)} - ${formatTime(s.end_time)}</span>
+                        <button class="btn-play" onclick="event.stopPropagation();playRange(${s.start_time},${s.end_time})">▶️</button>
+                    </div>
+                `;
+                if (s.phrases) {
+                    for (const p of s.phrases) {
+                        const isPhraseSelected = selectedStructure && selectedStructure.id === p.id;
+                        html += `
+                            <div class="structure-option phrased ${isPhraseSelected ? 'selected' : ''}" onclick="selectStructure('${p.id}')">
+                                <span class="structure-icon">📄</span>
+                                <span class="structure-name">${p.title} ${p.lyrics ? '🎤' : ''}</span>
+                                <span class="structure-time">${formatTime(p.start_time)} - ${formatTime(p.end_time)}</span>
+                                <button class="btn-play" onclick="event.stopPropagation();playRange(${p.start_time},${p.end_time})">▶️</button>
+                            </div>
+                        `;
+                    }
+                }
+            }
+            container.innerHTML = html;
+        }
+
+        function selectStructure(id) {
+            // Find structure by id
+            for (const s of structures) {
+                if (s.id === id) {
+                    selectedStructure = { id: s.id, title: s.title, start: s.start_time, end: s.end_time };
+                    generateReferenceData();
+                    updateSelectionUI();
+                    return;
+                }
+                if (s.phrases) {
+                    for (const p of s.phrases) {
+                        if (p.id === id) {
+                            selectedStructure = { id: p.id, title: p.title, start: p.start_time, end: p.end_time };
+                            generateReferenceData();
+                            updateSelectionUI();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        function updateSelectionUI() {
+            if (selectedStructure) {
+                document.getElementById('range-info').textContent =
+                    `🎯 ${selectedStructure.title}：${formatTime(selectedStructure.start)} - ${formatTime(selectedStructure.end)}`;
+                document.getElementById('range-actions').style.display = 'flex';
+                document.getElementById('current-range-label').textContent =
+                    `${selectedStructure.title} (${formatTime(selectedStructure.start)})`;
+                renderStructureList(); // re-render to show selection
+            }
+        }
+
+        function clearSelection() {
+            selectedStructure = null;
+            document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
+            document.getElementById('range-actions').style.display = 'none';
+            document.getElementById('current-range-label').textContent = '未選擇';
+            renderStructureList();
+        }
+
+        function startPractice() {
+            if (!selectedStructure) {
+                alert('請先選擇一個段落或句子');
+                return;
+            }
+            if (!referenceNotes || referenceNotes.length === 0) {
+                alert('此段落尚無比對資料，請確認已選取正確的聲部');
+                return;
+            }
+            document.getElementById('status-text').textContent = `練習：${selectedStructure.title}`;
+            document.getElementById('chart-area').innerHTML = `
+                <div>
+                    <div style="font-size:48px;margin-bottom:12px;">🎯</div>
+                    <div>準備練習「${selectedStructure.title}」</div>
+                    <div style="color:#888;font-size:13px;margin-top:8px;">
+                        ${formatTime(selectedStructure.start)} → ${formatTime(selectedStructure.end)}
+                        (${(selectedStructure.end - selectedStructure.start).toFixed(1)}秒)
+                    </div>
+                    <div style="color:#27ae60;font-size:12px;margin-top:6px;">
+                        比對基準：${referenceNotes.length} 個音符（用戶端 MIDI 即時產生）
+                    </div>
+                </div>
+            `;
+            console.log('Reference notes for comparison:', referenceNotes);
+            // Auto-play the range
+            playRange(selectedStructure.start, selectedStructure.end);
+        }
+
+        function switchTab(el, tab) {
+            document.querySelectorAll('.viz-tab').forEach(t => t.classList.remove('active'));
+            el.classList.add('active');
+            // Placeholder - would switch visualization types
+        }
+
+        function logout() {
+            document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            window.location.href = '/index.html';
+        }
+
+        // --- Init ---
+        loadSongs();
+    </script>
+</body>
+</html>

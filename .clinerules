@@ -1,0 +1,38 @@
+# Cline Global Execution Rules & Context Isolation
+
+You are an expert software architect and developer. To maximize performance, minimize token usage, and prevent context bloat, you must strictly follow these rules during all tasks in this workspace.
+
+## 1. Context Isolation & Black-Box Rule (Strict)
+*   **Do Not Scan Unrelated Files:** When working on a specific feature, endpoint, or service, you are strictly FORBIDDEN from reading or searching files outside of that immediate domain unless explicitly requested by the user.
+*   **Interface-Driven Development:** Treat other modules as black boxes. Assume adjacent services work perfectly according to their defined TypeScript types, API contracts, or interface definitions.
+*   **Use Mocks and Stubs:** If you need to write tests or implement a feature that depends on another module that is incomplete, create an interface stub or mock. Do not wait for or read the full implementation of the peer module.
+*   **Primitive Coupling Only:** Relate data models using primitive identifiers (e.g., `UUID`, `String`). Do not import heavy ORM entity classes laterally across modules just to define a relationship.
+
+## 2. Code Generation & Refactoring Constraints
+*   **Incremental Updates Only:** Do not rewrite an entire file if only modifying a small function. Only output the lines that need changing or provide clear, targeted diffs.
+*   **No Speculative Code:** Write only what is requested. Do not add boilerplate, "future-proof" features, or placeholder code (`// TODO`) that expands context size unnecessarily.
+*   **No Lateral File Analysis:** Do not use `grep`, `find`, or bulk file-reading tools to scan the whole codebase unless you are performing a global migration or explicitly instructed.
+
+## 3. Snapshot & Progress Tracking
+*   **Take snapshots at key milestones:** Run `go run cmd/snapshot/main.go` before/after each major feature implementation, before and after refactoring, and before switching contexts.
+*   **Snapshots are saved to `snapshot/snapshot.html`** with full project overview including file stats, API routes, domain models, git status, and test results.
+*   **Use `snapshot/progress.md`** to track high-level progress between sessions. Update this file at the end of each session.
+*   **If context is getting full**, summarize current state in `snapshot/progress.md`, take a snapshot, then start a fresh conversation referencing the snapshot.
+
+## 4. Communication Protocol
+*   **Minimalist Explanations:** Keep text responses short and punchy. Focus 90% of your response on the actual solution or code snippet.
+*   **Ask for Interface Specs Only:** If you lack information about another module's capabilities, ask the user to provide *only the type definitions or method signatures* of that module, NOT the full source code.
+
+## 5. Specific Example Architecture Protocol
+When implementing the **Song Assessment System**, adhere to these boundaries:
+*   `MIDI Tick Alignment Service`: Input is `start_time` (Float), output is `start_tick` (Int). Do not read database storage logic.
+*   `Segmented Evaluation Engine`: Input is `structure_id`, output is `score`. Do not read the UI rendering code or the full user profile logic.
+
+## 6. Python related restrictions
+CRITICAL TOKEN SAVING RULES FOR PYTHON OUTPUTS:
+1. When writing Python scripts that output data for you to read, minimize output size.
+2. Do not use human-readable formatting, headers, or decorative text.
+3. Use extreme compression: output data as minified JSON (no whitespace) or single-line CSV.
+4. Truncate long strings, lists, or arrays to only the essential elements needed for verification.
+5. Example format: {"status":"success","count":5,"ids":[1,2,3,4,5]}
+6. Never print full logs or giant tables to the terminal.

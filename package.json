@@ -1,0 +1,16 @@
+{
+  "name": "vocalpracticeappv0.1",
+  "version": "1.0.0",
+  "description": "Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。後端提供 MIDI 結構管理、MIDI 重疊檢測與 MIDI 比對評分 API，前端提供錄音 → pitch detection → MIDI 轉換、節拍器、歌曲播放（人聲版/完整版）等功能。",
+  "main": "admin.js",
+  "scripts": {
+    "test": "vitest run"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "vitest": "^4.1.6"
+  }
+}

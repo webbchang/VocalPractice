@@ -1,0 +1,598 @@
+package service
+
+import (
+	"encoding/binary"
+	"math"
+	"os"
+	"path/filepath"
+	"sort"
+	"testing"
+)
+
+func TestEndToEndAssessmentWithMIDIAndWAV(t *testing.T) {
+	// 1. Parse the reference MIDI file
+	midiPath := filepath.Join("..", "..", "test_data", "reference.mid")
+	midiData, err := os.ReadFile(midiPath)
+	if err != nil {
+		t.Fatalf("failed to read MIDI file: %v", err)
+	}
+
+	parser := NewMIDIParser()
+	song, err := parser.Parse(midiData, "Test Song", "Test Artist")
+	if err != nil {
+		t.Fatalf("failed to parse MIDI: %v", err)
+	}
+
+	if len(song.Tracks) == 0 {
+		t.Fatal("no tracks parsed from MIDI")
+	}
+
+	// Use the first track with notes as reference
+	var referenceNotes []MIDINoteForTest
+	for _, track := range song.Tracks {
+		if len(track.Notes) > 0 {
+			for _, n := range track.Notes {
+				referenceNotes = append(referenceNotes, MIDINoteForTest{
+					Pitch:     n.Pitch,
+					StartTime: n.StartTime,
+					EndTime:   n.EndTime,
+				})
+			}
+			break
+		}
+	}
+
+	if len(referenceNotes) == 0 {
+		t.Fatal("no notes found in MIDI tracks")
+	}
+	t.Logf("Parsed %d reference notes from MIDI", len(referenceNotes))
+	for i, n := range referenceNotes[:min(5, len(referenceNotes))] {
+		t.Logf("  Ref note %d: pitch=%d start=%.2f end=%.2f", i, n.Pitch, n.StartTime, n.EndTime)
+	}
+
+	// 2. Read the WAV file (IEEE float 32-bit, 2 channels, 32000 Hz)
+	wavPath := filepath.Join("..", "..", "test_data", "test_recording_alto.wav")
+	wavData, err := os.ReadFile(wavPath)
+	if err != nil {
+		t.Fatalf("failed to read WAV file: %v", err)
+	}
+
+	// Parse WAV header
+	if len(wavData) < 44 {
+		t.Fatal("WAV file too small")
+	}
+	if string(wavData[0:4]) != "RIFF" || string(wavData[8:12]) != "WAVE" {
+		t.Fatal("not a valid WAV file")
+	}
+
+	// Read format chunk
+	var sampleRate int32
+	var numChannels int16
+	var bitsPerSample int16
+
+	offset := int32(12)
+	for offset < int32(len(wavData)-8) {
+		chunkID := string(wavData[offset : offset+4])
+		chunkSize := int32(binary.LittleEndian.Uint32(wavData[offset+4 : offset+8]))
+		if chunkID == "fmt " {
+			audioFormat := binary.LittleEndian.Uint16(wavData[offset+8 : offset+10])
+			if audioFormat != 3 {
+				t.Fatalf("expected IEEE float format (3), got %d", audioFormat)
+			}
+			numChannels = int16(binary.LittleEndian.Uint16(wavData[offset+10 : offset+12]))
+			sampleRate = int32(binary.LittleEndian.Uint32(wavData[offset+12 : offset+16]))
+			bitsPerSample = int16(binary.LittleEndian.Uint16(wavData[offset+22 : offset+24]))
+		}
+		if chunkID == "data" {
+			break
+		}
+		offset += chunkSize + 8
+	}
+
+	if sampleRate == 0 {
+		t.Fatal("failed to parse WAV format chunk")
+	}
+	t.Logf("WAV: %d channels, %d Hz, %d bits/sample", numChannels, sampleRate, bitsPerSample)
+
+	// Find data chunk
+	dataOffset := offset + 8
+	dataSize := int32(binary.LittleEndian.Uint32(wavData[offset+4 : offset+8]))
+	t.Logf("Data chunk: offset=%d, size=%d", dataOffset, dataSize)
+
+	// Convert IEEE float samples to []float64 (mono mix)
+	numSamples := dataSize / int32(bitsPerSample/8) / int32(numChannels)
+	samples := make([]float64, numSamples)
+
+	for i := int32(0); i < numSamples; i++ {
+		var sum float64
+		for ch := int16(0); ch < numChannels; ch++ {
+			byteOffset := dataOffset + (i*int32(numChannels)+int32(ch))*4
+			if byteOffset+4 > int32(len(wavData)) {
+				break
+			}
+			bits := binary.LittleEndian.Uint32(wavData[byteOffset : byteOffset+4])
+			sample := math.Float32frombits(bits)
+			sum += float64(sample)
+		}
+		samples[i] = sum / float64(numChannels)
+	}
+
+	t.Logf("Loaded %d samples (%.2f seconds)", len(samples), float64(len(samples))/float64(sampleRate))
+
+	// 3. Run pitch detection
+	detectedNotes := detectPitchGo(samples, int(sampleRate))
+	t.Logf("Detected %d notes", len(detectedNotes))
+	for i, n := range detectedNotes[:min(5, len(detectedNotes))] {
+		t.Logf("  Detected note %d: pitch=%d start=%.2f end=%.2f", i, n.Pitch, n.StartTime, n.EndTime)
+	}
+
+	// 4. Merge same-pitch reference notes, then compare merged vs detected
+	mergedRef := mergeSamePitchNotes(referenceNotes)
+	t.Logf("Merged into %d note groups", len(mergedRef))
+
+	result := compareMergedNotes(referenceNotes, mergedRef, detectedNotes)
+	t.Logf("Assessment result:")
+	t.Logf("  Score: %d", result.Score)
+	t.Logf("  Total notes: %d", result.TotalNotes)
+	t.Logf("  Matched notes: %d", result.MatchedNotes)
+	t.Logf("  Avg pitch deviation: %.2f cents", result.AveragePitchDeviation)
+	t.Logf("  Avg duration deviation: %.3f sec", result.AverageDurationDeviation)
+
+	// Show some comparisons
+	for i, nc := range result.NoteComparison[:min(10, len(result.NoteComparison))] {
+		t.Logf("  Pair %d: ref=%d user=%d pitchDev=%.0fc durDev=%.3fs status=%s",
+			i, nc.RefPitch, nc.UserPitch, nc.PitchDeviationCents, nc.DurationDeviationSec, nc.MatchStatus)
+	}
+
+	// 5. Basic sanity checks
+	if result.Score < 0 || result.Score > 100 {
+		t.Errorf("score out of range: %d", result.Score)
+	}
+	if result.TotalNotes == 0 {
+		t.Error("total notes should not be zero")
+	}
+	if result.MatchedNotes > result.TotalNotes {
+		t.Errorf("matched notes (%d) > total notes (%d)", result.MatchedNotes, result.TotalNotes)
+	}
+
+	// Verify matched notes exist
+	if result.MatchedNotes > 0 {
+		t.Logf("PASS: successfully matched %d/%d notes (score=%d)", result.MatchedNotes, result.TotalNotes, result.Score)
+	}
+}
+
+// MIDINoteForTest is a simplified note struct for testing
+type MIDINoteForTest struct {
+	Pitch     int
+	StartTime float64
+	EndTime   float64
+}
+
+type NoteComparisonResult struct {
+	RefPitch             int
+	UserPitch            int
+	RefStart             float64
+	RefEnd               float64
+	UserStart            float64
+	UserEnd              float64
+	PitchDeviationCents  float64
+	DurationDeviationSec float64
+	MatchStatus          string
+}
+
+type AssessmentResult struct {
+	Score                    int
+	TotalNotes               int
+	MatchedNotes             int
+	AveragePitchDeviation    float64
+	AverageDurationDeviation float64
+	PitchDeviation           []float64
+	DurationDeviation        []float64
+	NoteComparison           []NoteComparisonResult
+}
+
+// detectPitchGo is a Go implementation of autocorrelation pitch detection matching the JS logic
+func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
+	windowSize := 2048
+	hopSize := int(float64(sampleRate) * 0.05) // 50ms
+	silenceThreshold := 0.01
+	correlationThreshold := 0.3
+	minFreq := 50.0
+	maxFreq := 2000.0
+
+	var notes []MIDINoteForTest
+	var currentNote *MIDINoteForTest
+
+	for start := 0; start+windowSize < len(samples); start += hopSize {
+		end := start + windowSize
+		if end > len(samples) {
+			end = len(samples)
+		}
+		window := samples[start:end]
+
+		// RMS energy
+		var rms float64
+		for _, s := range window {
+			rms += s * s
+		}
+		rms = math.Sqrt(rms / float64(len(window)))
+
+		if rms < float64(silenceThreshold) {
+			if currentNote != nil {
+				currentNote.EndTime = float64(start) / float64(sampleRate)
+				notes = append(notes, *currentNote)
+				currentNote = nil
+			}
+			continue
+		}
+
+		minPeriod := int(float64(sampleRate) / maxFreq)
+		maxPeriod := int(math.Ceil(float64(sampleRate) / minFreq))
+
+		if minPeriod < 1 {
+			minPeriod = 1
+		}
+		if maxPeriod > len(window)/2 {
+			maxPeriod = len(window) / 2
+		}
+
+		// Autocorrelation
+		bestPeriod := 0
+		maxCorr := 0.0
+		for period := minPeriod; period <= maxPeriod; period++ {
+			var corr float64
+			for i := 0; i < len(window)-period; i++ {
+				corr += window[i] * window[i+period]
+			}
+			corr /= float64(len(window))
+			if corr > maxCorr {
+				maxCorr = corr
+				bestPeriod = period
+			}
+		}
+
+		if maxCorr < float64(correlationThreshold) || bestPeriod == 0 {
+			if currentNote != nil {
+				currentNote.EndTime = float64(start) / float64(sampleRate)
+				notes = append(notes, *currentNote)
+				currentNote = nil
+			}
+			continue
+		}
+
+		freq := float64(sampleRate) / float64(bestPeriod)
+		midiNote := 12*math.Log2(freq/440.0) + 69
+		roundedPitch := int(math.Round(midiNote))
+
+		if roundedPitch < 40 || roundedPitch > 93 {
+			continue
+		}
+
+		time := float64(start) / float64(sampleRate)
+
+		if currentNote == nil {
+			currentNote = &MIDINoteForTest{
+				Pitch:     roundedPitch,
+				StartTime: time,
+				EndTime:   time + float64(hopSize)/float64(sampleRate),
+			}
+		} else {
+			if math.Abs(float64(currentNote.Pitch-roundedPitch)) >= 2 {
+				currentNote.EndTime = time
+				notes = append(notes, *currentNote)
+				currentNote = &MIDINoteForTest{
+					Pitch:     roundedPitch,
+					StartTime: time,
+					EndTime:   time + float64(hopSize)/float64(sampleRate),
+				}
+			} else {
+				currentNote.EndTime = time + float64(hopSize)/float64(sampleRate)
+			}
+		}
+	}
+
+	if currentNote != nil {
+		notes = append(notes, *currentNote)
+	}
+
+	// Filter short notes
+	var filtered []MIDINoteForTest
+	for _, n := range notes {
+		if n.EndTime-n.StartTime > 0.1 {
+			filtered = append(filtered, n)
+		}
+	}
+	return filtered
+}
+
+// MergedNote groups consecutive same-pitch MIDI events into one logical note.
+type MergedNote struct {
+	Pitch     int
+	StartTime float64
+	EndTime   float64
+	EventIdx  []int
+}
+
+// mergeSamePitchNotes groups consecutive same-pitch notes whose gap < 50ms.
+func mergeSamePitchNotes(notes []MIDINoteForTest) []MergedNote {
+	if len(notes) == 0 {
+		return nil
+	}
+
+	sorted := make([]MIDINoteForTest, len(notes))
+	copy(sorted, notes)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].StartTime < sorted[j].StartTime
+	})
+
+	sortedToOrig := make([]int, len(sorted))
+	for i, s := range sorted {
+		for j, o := range notes {
+			if s.StartTime == o.StartTime && s.EndTime == o.EndTime && s.Pitch == o.Pitch {
+				sortedToOrig[i] = j
+				break
+			}
+		}
+	}
+
+	var merged []MergedNote
+	current := MergedNote{
+		Pitch:     sorted[0].Pitch,
+		StartTime: sorted[0].StartTime,
+		EndTime:   sorted[0].EndTime,
+		EventIdx:  []int{sortedToOrig[0]},
+	}
+
+	gapThreshold := 0.05
+
+	for i := 1; i < len(sorted); i++ {
+		n := sorted[i]
+		gap := n.StartTime - current.EndTime
+		if n.Pitch == current.Pitch && gap >= 0 && gap <= gapThreshold {
+			if n.EndTime > current.EndTime {
+				current.EndTime = n.EndTime
+			}
+			current.EventIdx = append(current.EventIdx, sortedToOrig[i])
+		} else {
+			merged = append(merged, current)
+			current = MergedNote{
+				Pitch:     n.Pitch,
+				StartTime: n.StartTime,
+				EndTime:   n.EndTime,
+				EventIdx:  []int{sortedToOrig[i]},
+			}
+		}
+	}
+	merged = append(merged, current)
+
+	return merged
+}
+
+// compareMergedNotes compares merged reference note groups against detected notes.
+// If a merged group has ≥80% overlap with a same-pitch detected note, all events in
+// that group are marked "matched" with group-level deviations.
+func compareMergedNotes(allRefs []MIDINoteForTest, merged []MergedNote, detected []MIDINoteForTest) AssessmentResult {
+	detSorted := make([]MIDINoteForTest, len(detected))
+	copy(detSorted, detected)
+	sort.Slice(detSorted, func(i, j int) bool {
+		return detSorted[i].StartTime < detSorted[j].StartTime
+	})
+
+	matched := make([]NoteComparisonResult, len(allRefs))
+	for i := range matched {
+		matched[i] = NoteComparisonResult{
+			RefPitch:    allRefs[i].Pitch,
+			RefStart:    allRefs[i].StartTime,
+			RefEnd:      allRefs[i].EndTime,
+			MatchStatus: "missed",
+		}
+	}
+
+	usedDetected := make(map[int]bool)
+	matchedCount := 0
+	totalPitchDev := 0.0
+	totalDurationDev := 0.0
+
+	for _, mg := range merged {
+		mgLen := mg.EndTime - mg.StartTime
+		bestIdx := -1
+		bestOverlap := 0.0
+
+		for i, det := range detSorted {
+			if usedDetected[i] {
+				continue
+			}
+			if det.Pitch != mg.Pitch {
+				continue
+			}
+
+			overlapStart := math.Max(mg.StartTime, det.StartTime)
+			overlapEnd := math.Min(mg.EndTime, det.EndTime)
+			if overlapEnd <= overlapStart {
+				continue
+			}
+			overlapLen := overlapEnd - overlapStart
+
+			detLen := det.EndTime - det.StartTime
+			shorterLen := mgLen
+			if detLen < shorterLen {
+				shorterLen = detLen
+			}
+			if shorterLen <= 0 {
+				continue
+			}
+			ratio := overlapLen / shorterLen
+			if ratio > bestOverlap {
+				bestOverlap = ratio
+				bestIdx = i
+			}
+		}
+
+		if bestIdx >= 0 && bestOverlap >= 0.8 {
+			usedDetected[bestIdx] = true
+			det := detSorted[bestIdx]
+
+			detLen := det.EndTime - det.StartTime
+			pitchDev := float64(mg.Pitch-det.Pitch) * 100.0
+			durDev := mgLen - detLen
+
+			for _, eidx := range mg.EventIdx {
+				matched[eidx].UserPitch = det.Pitch
+				matched[eidx].UserStart = det.StartTime
+				matched[eidx].UserEnd = det.EndTime
+				matched[eidx].PitchDeviationCents = pitchDev
+				matched[eidx].DurationDeviationSec = durDev
+				matched[eidx].MatchStatus = "matched"
+			}
+
+			matchedCount += len(mg.EventIdx)
+			totalPitchDev += math.Abs(pitchDev) * float64(len(mg.EventIdx))
+			totalDurationDev += math.Abs(durDev) * float64(len(mg.EventIdx))
+		}
+	}
+
+	avgPitchDev := 0.0
+	avgDurationDev := 0.0
+	if matchedCount > 0 {
+		avgPitchDev = totalPitchDev / float64(matchedCount)
+		avgDurationDev = totalDurationDev / float64(matchedCount)
+	}
+
+	pitchScore := math.Max(0, 100.0-avgPitchDev*0.5)
+	durationScore := math.Max(0, 100.0-avgDurationDev*50.0)
+	overallScore := pitchScore*0.7 + durationScore*0.3
+
+	// If zero user notes matched, score must be 0 (not 100)
+	if matchedCount == 0 {
+		overallScore = 0
+	}
+
+	pitchDeviations := make([]float64, len(matched))
+	durationDeviations := make([]float64, len(matched))
+	for i, m := range matched {
+		pitchDeviations[i] = m.PitchDeviationCents
+		durationDeviations[i] = m.DurationDeviationSec
+	}
+
+	return AssessmentResult{
+		Score:                    int(math.Round(overallScore)),
+		TotalNotes:               len(allRefs),
+		MatchedNotes:             matchedCount,
+		AveragePitchDeviation:    math.Round(avgPitchDev*10) / 10,
+		AverageDurationDeviation: math.Round(avgDurationDev*100) / 100,
+		PitchDeviation:           pitchDeviations,
+		DurationDeviation:        durationDeviations,
+		NoteComparison:           matched,
+	}
+}
+
+// compareNotesGo is kept for backward compatibility (original per-event comparison).
+func compareNotesGo(reference, detected []MIDINoteForTest) AssessmentResult {
+	refSorted := make([]MIDINoteForTest, len(reference))
+	copy(refSorted, reference)
+	sort.Slice(refSorted, func(i, j int) bool {
+		return refSorted[i].StartTime < refSorted[j].StartTime
+	})
+
+	detSorted := make([]MIDINoteForTest, len(detected))
+	copy(detSorted, detected)
+	sort.Slice(detSorted, func(i, j int) bool {
+		return detSorted[i].StartTime < detSorted[j].StartTime
+	})
+
+	tolerance := 0.5
+	var matched []NoteComparisonResult
+	usedDetected := make(map[int]bool)
+	matchedCount := 0
+	totalPitchDev := 0.0
+	totalDurationDev := 0.0
+
+	for _, ref := range refSorted {
+		bestMatch := -1
+		bestDist := tolerance
+
+		for i, det := range detSorted {
+			if usedDetected[i] {
+				continue
+			}
+			dist := math.Abs(ref.StartTime - det.StartTime)
+			if dist < bestDist {
+				bestDist = dist
+				bestMatch = i
+			}
+		}
+
+		if bestMatch >= 0 {
+			usedDetected[bestMatch] = true
+			det := detSorted[bestMatch]
+			pitchDev := float64(ref.Pitch-det.Pitch) * 100.0
+			refDuration := ref.EndTime - ref.StartTime
+			detDuration := det.EndTime - det.StartTime
+			durationDev := refDuration - detDuration
+
+			matched = append(matched, NoteComparisonResult{
+				RefPitch:             ref.Pitch,
+				UserPitch:            det.Pitch,
+				RefStart:             ref.StartTime,
+				RefEnd:               ref.EndTime,
+				UserStart:            det.StartTime,
+				UserEnd:              det.EndTime,
+				PitchDeviationCents:  pitchDev,
+				DurationDeviationSec: durationDev,
+				MatchStatus:          "matched",
+			})
+
+			matchedCount++
+			totalPitchDev += math.Abs(pitchDev)
+			totalDurationDev += math.Abs(durationDev)
+		} else {
+			matched = append(matched, NoteComparisonResult{
+				RefPitch:    ref.Pitch,
+				RefStart:    ref.StartTime,
+				RefEnd:      ref.EndTime,
+				MatchStatus: "missed",
+			})
+		}
+	}
+
+	avgPitchDev := 0.0
+	avgDurationDev := 0.0
+	if matchedCount > 0 {
+		avgPitchDev = totalPitchDev / float64(matchedCount)
+		avgDurationDev = totalDurationDev / float64(matchedCount)
+	}
+
+	pitchScore := math.Max(0, 100.0-avgPitchDev*0.5)
+	durationScore := math.Max(0, 100.0-avgDurationDev*50.0)
+	overallScore := pitchScore*0.7 + durationScore*0.3
+
+	// If zero user notes matched, score must be 0 (not 100)
+	if matchedCount == 0 {
+		overallScore = 0
+	}
+
+	pitchDeviations := make([]float64, len(matched))
+	durationDeviations := make([]float64, len(matched))
+	for i, m := range matched {
+		pitchDeviations[i] = m.PitchDeviationCents
+		durationDeviations[i] = m.DurationDeviationSec
+	}
+
+	return AssessmentResult{
+		Score:                    int(math.Round(overallScore)),
+		TotalNotes:               len(refSorted),
+		MatchedNotes:             matchedCount,
+		AveragePitchDeviation:    math.Round(avgPitchDev*10) / 10,
+		AverageDurationDeviation: math.Round(avgDurationDev*100) / 100,
+		PitchDeviation:           pitchDeviations,
+		DurationDeviation:        durationDeviations,
+		NoteComparison:           matched,
+	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}

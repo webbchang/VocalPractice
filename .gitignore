@@ -1,0 +1,24 @@
+# Build artifacts
+snapshot/snapshot
+
+# Uploads
+uploads/
+
+# Node
+node_modules/
+
+# Go binary artifacts
+*.exe
+*.bin
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Test data
+test_data/
+output/

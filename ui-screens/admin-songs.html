@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者後台 - 歌曲管理</title>
+    
+    <link rel="stylesheet" href="admin-common.css">
+    <link rel="stylesheet" href="admin-songs.css">
+</head>
+<body>
+    <div class="sidebar">
+        <h2>🎤 Vocal Practice</h2>
+        <nav>
+            <a href="admin-users.html">👥 使用者管理</a>
+            <a href="admin-songs.html" class="active">🎵 歌曲管理</a>
+            <a href="admin-structures.html">📝 段落結構</a>
+            <a href="../index.html">🔙 返回前台</a>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h1>歌曲管理</h1>
+            <span>管理員</span>
+        </div>
+
+        <!-- 上傳 MIDI -->
+        <div class="card">
+            <h3>上傳 MIDI 檔案</h3>
+            <div class="form-group">
+                <label for="song-title">歌曲名稱 *</label>
+                <input type="text" id="song-title" placeholder="輸入歌曲名稱">
+            </div>
+            <div class="form-group">
+                <label for="song-artist">藝術家 *</label>
+                <input type="text" id="song-artist" placeholder="輸入藝術家名稱">
+            </div>
+            <div class="upload-area" id="upload-area">
+                <div class="upload-icon">🎹</div>
+                <p>拖曳 MIDI 檔案至此，或點擊選擇檔案</p>
+                <input type="file" id="midi-file" accept=".mid,.midi" style="display: none;">
+            </div>
+            <div class="progress-bar" id="upload-progress" style="display: none;">
+                <div class="progress-fill" id="progress-fill"></div>
+            </div>
+            <div id="file-info" style="margin-top: 12px; color: #666; font-size: 14px;"></div>
+            <br>
+            <button class="btn btn-primary" id="upload-btn" onclick="uploadSong()">上傳並解析</button>
+        </div>
+
+        <!-- 歌曲列表 -->
+        <div class="card">
+            <h3>歌曲清單</h3>
+            <div class="song-grid" id="song-list">
+                <div style="grid-column: 1 / -1; text-align: center; color: #999; padding: 40px;">載入中...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1/admin';
+
+        async function api(path, options = {}) {
+            const res = await fetch(API_BASE + path, {
+                credentials: 'same-origin',
+                ...options,
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: res.statusText }));
+                throw new Error(err.error || `HTTP ${res.status}`);
+            }
+            return res.json();
+        }
+
+        // --- 上傳功能 ---
+        const uploadArea = document.getElementById('upload-area');
+        const fileInput = document.getElementById('midi-file');
+        const fileInfo = document.getElementById('file-info');
+        const uploadProgress = document.getElementById('upload-progress');
+        const progressFill = document.getElementById('progress-fill');
+        const uploadBtn = document.getElementById('upload-btn');
+
+        let selectedFile = null;
+
+        uploadArea.addEventListener('click', () => fileInput.click());
+
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                handleFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) {
+                handleFile(e.target.files[0]);
+            }
+        });
+
+        function handleFile(file) {
+            const name = file.name.toLowerCase();
+            if (name.endsWith('.mid') || name.endsWith('.midi')) {
+                selectedFile = file;
+                fileInfo.textContent = `已選擇: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+            } else {
+                fileInfo.textContent = '請選擇 MIDI 檔案 (.mid 或 .midi)';
+                selectedFile = null;
+            }
+        }
+
+        async function uploadSong() {
+            if (!selectedFile) {
+                alert('請選擇 MIDI 檔案');
+                return;
+            }
+            const title = document.getElementById('song-title').value;
+            const artist = document.getElementById('song-artist').value;
+
+            if (!title || !artist) {
+                alert('請輸入歌曲名稱和藝術家');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('title', title);
+            formData.append('artist', artist);
+            formData.append('midi_file', selectedFile);
+
+            uploadProgress.style.display = 'block';
+            progressFill.style.width = '0%';
+            uploadBtn.disabled = true;
+            uploadBtn.textContent = '上傳中...';
+
+            // Simulate progress for better UX (actual upload progress is hard with fetch)
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 5;
+                if (progress > 90) progress = 90;
+                progressFill.style.width = progress + '%';
+            }, 200);
+
+            try {
+                const result = await api('/songs', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                clearInterval(interval);
+                progressFill.style.width = '100%';
+
+                setTimeout(() => {
+                    uploadProgress.style.display = 'none';
+                    progressFill.style.width = '0%';
+                    fileInfo.textContent = '';
+                    selectedFile = null;
+                    document.getElementById('song-title').value = '';
+                    document.getElementById('song-artist').value = '';
+                    uploadBtn.disabled = false;
+                    uploadBtn.textContent = '上傳並解析';
+                    loadSongs();
+                    alert(`歌曲「${result.title}」上傳成功！共 ${result.tracks.length} 個聲部`);
+                }, 500);
+            } catch (err) {
+                clearInterval(interval);
+                uploadProgress.style.display = 'none';
+                progressFill.style.width = '0%';
+                uploadBtn.disabled = false;
+                uploadBtn.textContent = '上傳並解析';
+                alert('上傳失敗：' + err.message);
+            }
+        }
+
+        // --- 載入歌曲列表 ---
+        async function loadSongs() {
+            const container = document.getElementById('song-list');
+            container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: #999; padding: 40px;">載入中...</div>';
+
+            try {
+                const songs = await api('/songs');
+
+                if (songs.length === 0) {
+                    container.innerHTML = '<div style="grid-column: 1 / -1; text-align: center; color: #999; padding: 40px;">尚無歌曲，請上傳 MIDI 檔案</div>';
+                    return;
+                }
+
+                container.innerHTML = '';
+                for (const song of songs) {
+                    const card = document.createElement('div');
+                    card.className = 'song-card';
+                    card.innerHTML = `
+                        <h4>${escapeHtml(song.title)} ${song.artist ? '🎵' : ''}</h4>
+                        <p>${escapeHtml(song.artist || '未知藝術家')} · ${song.track_count} 個聲部</p>
+                        <div style="margin-top: 16px; display: flex; gap: 8px;">
+                            <button class="btn btn-secondary" onclick="viewDetails('${song.id}')">檢視詳情</button>
+                            <button class="btn btn-secondary" onclick="editStructures('${song.id}')">管理段落</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteSong('${song.id}', '${escapeHtml(song.title)}')">刪除</button>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                }
+            } catch (err) {
+                container.innerHTML = `<div style="grid-column: 1 / -1; text-align: center; color: #e74c3c; padding: 40px;">載入失敗：${err.message}</div>`;
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        async function toggleVocal(songId, trackId, currentValue) {
+            try {
+                await api('/songs/' + songId + '/tracks/' + trackId, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ is_vocal: !currentValue }),
+                });
+                viewDetails(songId);
+            } catch (err) {
+                alert('更新失敗：' + err.message);
+            }
+        }
+
+        async function viewDetails(songId) {
+            try {
+                const song = await api('/songs/' + songId);
+                let trackHtml = '';
+                for (const t of song.tracks) {
+                    const badge = t.is_vocal ? '🎤 主旋律' : '🎵 伴奏';
+                    trackHtml += `
+                        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1a1a2e;border-radius:6px;margin-bottom:6px;">
+                            <span><strong>${escapeHtml(t.name)}</strong> · ${t.note_count} 音符 (ch ${t.channel})</span>
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <span style="font-size:13px;color:#888;">${badge}</span>
+                                <button class="btn btn-sm ${t.is_vocal ? 'btn-warning' : 'btn-success'}" onclick="toggleVocal('${song.id}','${t.id}',${t.is_vocal})">
+                                    ${t.is_vocal ? '設為伴奏' : '設為主旋律'}
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;';
+                modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+                modal.innerHTML = `
+                    <div style="background:#16213e;border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+                        <h3 style="margin-bottom:4px;">${escapeHtml(song.title)}</h3>
+                        <p style="color:#888;margin-bottom:16px;">${escapeHtml(song.artist)}</p>
+                        <div style="margin-bottom:16px;">
+                            <strong style="color:#888;font-size:13px;">聲部 (${song.tracks.length})</strong>
+                            <div style="margin-top:8px;">${trackHtml}</div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="this.closest('div[style]').remove()">關閉</button>
+                    </div>
+                `;
+                document.body.appendChild(modal);
+            } catch (err) {
+                alert('無法載入歌曲詳情：' + err.message);
+            }
+        }
+
+        function editStructures(songId) {
+            window.location.href = 'admin-structures.html?song=' + songId;
+        }
+
+        async function deleteSong(songId, title) {
+            if (!confirm(`確定刪除歌曲「${title}」？\n此操作無法復原。`)) return;
+
+            try {
+                await api('/songs/' + songId, { method: 'DELETE' });
+                loadSongs();
+            } catch (err) {
+                alert('刪除失敗：' + err.message);
+            }
+        }
+
+        // --- 初始化 ---
+        loadSongs();
+    </script>
+</body>
+</html>

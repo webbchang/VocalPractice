@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者後台 - 段落結構</title>
+    <link rel="stylesheet" href="admin-common.css">
+    <link rel="stylesheet" href="admin-structures.css">
+</head>
+<body>
+    <div class="sidebar">
+        <h2>🎤 Vocal Practice</h2>
+        <nav>
+            <a href="admin-users.html">👥 使用者管理</a>
+            <a href="admin-songs.html">🎵 歌曲管理</a>
+            <a href="admin-structures.html" class="active">📝 段落結構</a>
+            <a href="../index.html">🔙 返回前台</a>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h1>段落結構管理</h1>
+            <span>管理員</span>
+        </div>
+
+        <!-- 選擇歌曲 -->
+        <div class="card">
+            <div class="song-selector">
+                <label for="song-select"><strong>選擇歌曲：</strong></label>
+                <select id="song-select" onchange="onSongChange()">
+                    <option value="">請選擇歌曲...</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 時間軸視覺化 -->
+        <div class="card">
+            <h3>時間軸預覽</h3>
+            <div class="waveform-placeholder" id="waveform-placeholder">
+                📊 請先選擇歌曲
+            </div>
+            <div class="timeline-container">
+                <div class="timeline" id="timeline"></div>
+                <div class="stats-bar" id="stats-bar">
+                    <div class="stat-item">
+                        <div class="stat-value" id="stat-sections">0</div>
+                        <div class="stat-label">段落數</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="stat-phrases">0</div>
+                        <div class="stat-label">樂句數</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="stat-duration">0:00</div>
+                        <div class="stat-label">總時長</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 結構樹狀列表 -->
+        <div class="card">
+            <h3>結構清單</h3>
+            <div class="track-selector-lyrics">
+                <label><strong>編輯歌詞的聲部：</strong>
+                    <select id="lyrics-track-select" onchange="loadStructures()">
+                        <option value="">請先載入歌曲...</option>
+                    </select>
+                </label>
+                <button class="btn btn-sm btn-primary" onclick="saveAllLyrics()" style="float:right;">💾 儲存所有歌詞</button>
+            </div>
+            <div class="structure-tree" id="structure-tree">
+                <div style="text-align: center; color: #999; padding: 20px;">請先選擇歌曲</div>
+            </div>
+            <br>
+            <button class="btn btn-primary" onclick="showAddSection()">+ 新增段落</button>
+        </div>
+
+        <!-- 編輯面板 -->
+        <div class="card">
+            <div class="edit-panel" id="edit-panel" style="display: none;">
+                <h4 id="edit-panel-title">✏️ 編輯</h4>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>標題</label>
+                        <input type="text" id="edit-title" placeholder="例如: Verse A, Chorus">
+                    </div>
+                    <div class="form-group">
+                        <label>類型</label>
+                        <select id="edit-type">
+                            <option value="SECTION">SECTION（段落）</option>
+                            <option value="PHRASE">PHRASE（樂句）</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>開始時間（秒）</label>
+                        <input type="number" id="edit-start" step="0.1" placeholder="0.0">
+                    </div>
+                    <div class="form-group">
+                        <label>結束時間（秒）</label>
+                        <input type="number" id="edit-end" step="0.1" placeholder="0.0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>開始 Tick（從時間自動推算）</label>
+                        <input type="number" id="edit-start-tick" step="1" placeholder="0" readonly class="readonly-field">
+                    </div>
+                    <div class="form-group">
+                        <label>結束 Tick（從時間自動推算）</label>
+                        <input type="number" id="edit-end-tick" step="1" placeholder="0" readonly class="readonly-field">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>排序序號</label>
+                        <input type="number" id="edit-order" step="1" placeholder="1">
+                    </div>
+                    <div class="form-group">
+                        <label>父段落（樂句才需要）</label>
+                        <select id="edit-parent">
+                            <option value="">無（段落）</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group" style="flex: 1;">
+                        <label>歌詞（每句用換行分隔）</label>
+                        <textarea id="edit-lyrics" rows="4" placeholder="輸入每句歌詞，用 Enter 換行"></textarea>
+                    </div>
+                </div>
+                <div style="margin-top: 16px;">
+                    <button class="btn btn-primary" onclick="saveEdit()">💾 儲存</button>
+                    <button class="btn btn-secondary" onclick="cancelEdit()">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '/api/v1/admin';
+        const USER_API_BASE = '/api/v1';
+
+        // --- Web Audio MIDI Playback ---
+        let audioCtx = null;
+        let playbackNodes = [];
+        let playbackTimer = null;
+
+        function getAudioCtx() {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return audioCtx;
+        }
+
+        // Parse MIDI header + track chunk, extract note events with times
+        function parseMIDINotes(midiArrayBuf) {
+            const data = new Uint8Array(midiArrayBuf);
+            let offset = 0;
+
+            // Read header
+            const head = String.fromCharCode(data[0], data[1], data[2], data[3]);
+            if (head !== 'MThd') throw new Error('Not a MIDI file');
+            const headerLen = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7];
+            const format = (data[8] << 8) | data[9];
+            const numTracks = (data[10] << 8) | data[11];
+            const ticksPerQN = (data[12] << 8) | data[13];
+            offset = 14;
+
+            function readVarLen(arr, pos) {
+                let value = 0;
+                let i = 0;
+                while (true) {
+                    value = (value << 7) | (arr[pos + i] & 0x7F);
+                    if (!(arr[pos + i] & 0x80)) break;
+                    i++;
+                }
+                return { value, size: i + 1 };
+            }
+
+            // Build tempo map + collect notes in a single pass through all tracks
+            let tempoMap = [{ tick: 0, usPerQN: 500000 }];
+            const allNotes = [];
+
+            for (let t = 0; t < numTracks; t++) {
+                const chunkId = String.fromCharCode(data[offset], data[offset+1], data[offset+2], data[offset+3]);
+                if (chunkId !== 'MTrk') break;
+                const chunkLen = (data[offset+4] << 24) | (data[offset+5] << 16) | (data[offset+6] << 8) | data[offset+7];
+                offset += 8;
+                const end = offset + chunkLen;
+
+                let absTick = 0;
+                let runningStatus = 0;
+
+                while (offset < end) {
+                    const { value: delta, size: deltaSize } = readVarLen(data, offset);
+                    offset += deltaSize;
+                    absTick += delta;
+
+                    if (offset >= end) break;
+
+                    let status = data[offset];
+                    if (status >= 0x80) {
+                        runningStatus = status;
+                        offset++;
+                    } else if (runningStatus !== 0) {
+                        status = runningStatus;
+                    } else {
+                        offset++;
+                        continue;
+                    }
+
+                    if (status === 0xFF) {
+                        runningStatus = 0;
+                        const metaType = data[offset];
+                        offset++;
+                        const { value: metaLen, size: metaLenSize } = readVarLen(data, offset);
+                        offset += metaLenSize;
+                        if (metaType === 0x51 && metaLen >= 3) {
+                            const usPerQN = (data[offset] << 16) | (data[offset+1] << 8) | data[offset+2];
+                            tempoMap.push({ tick: absTick, usPerQN });
+                        }
+                        offset += metaLen;
+                        continue;
+                    }
+                    if (status === 0xF0 || status === 0xF7) {
+                        runningStatus = 0;
+                        const { value: sysexLen, size: sysexLenSize } = readVarLen(data, offset);
+                        offset += sysexLenSize + sysexLen;
+                        continue;
+                    }
+
+                    const highNibble = status & 0xF0;
+                    const channel = status & 0x0F;
+
+                    if (highNibble === 0x90 || highNibble === 0x80) {
+                        const pitch = data[offset];
+                        const velocity = data[offset + 1];
+                        offset += 2;
+
+                        if (highNibble === 0x90 && velocity > 0) {
+                            allNotes.push({ pitch, tick: absTick, channel, track: t });
+                        } else {
+                            // Note-off: find matching note-on and push complete note
+                            for (let i = allNotes.length - 1; i >= 0; i--) {
+                                if (allNotes[i].pitch === pitch && allNotes[i].endTick === undefined && allNotes[i].track === t) {
+                                    allNotes[i].endTick = absTick;
+                                    break;
+                                }
+                            }
+                        }
+                        continue;
+                    }
+
+                    // Skip other events
+                    switch (highNibble) {
+                        case 0xA0: case 0xB0: case 0xE0: offset += 2; break;
+                        case 0xC0: case 0xD0: offset += 1; break;
+                        default: break;
+                    }
+                }
+            }
+
+            // Sort and deduplicate tempo map
+            tempoMap.sort((a, b) => a.tick - b.tick);
+            const deduped = [];
+            for (const t of tempoMap) {
+                if (deduped.length === 0 || deduped[deduped.length-1].tick !== t.tick) {
+                    deduped.push(t);
+                }
+            }
+            tempoMap = deduped;
+
+            // Helper: convert tick to seconds using the tempo map
+            // Each map entry means: "at this tick, tempo becomes usPerQN"
+            function tickToSec(tick, map, ppq) {
+                let i = 0;
+                for (let j = map.length - 1; j >= 0; j--) {
+                    if (map[j].tick <= tick) { i = j; break; }
+                }
+                let timeSec = 0;
+                let prevTick = 0;
+                // Always start with the tempo at tick 0
+                let prevTempo = map[0].usPerQN;
+                for (let k = 1; k <= i; k++) {
+                    const dt = map[k].tick - prevTick;
+                    timeSec += dt * (prevTempo / (ppq * 1000000));
+                    prevTick = map[k].tick;
+                    prevTempo = map[k].usPerQN;
+                }
+                const dt = tick - prevTick;
+                timeSec += dt * (prevTempo / (ppq * 1000000));
+                return timeSec;
+            }
+
+            return allNotes
+                .filter(n => n.endTick !== undefined && n.endTick > n.tick)
+                .map(n => {
+                    const start = tickToSec(n.tick, tempoMap, ticksPerQN);
+                    const end = tickToSec(n.endTick, tempoMap, ticksPerQN);
+                    return {
+                        pitch: n.pitch,
+                        start: start,
+                        end: end,
+                        dur: end - start,
+                        channel: n.channel,
+                    };
+                })
+                .filter(n => n.dur > 0.02); // filter too-short notes
+        }
+
+        function midiPitchToFreq(pitch) {
+            return 440 * Math.pow(2, (pitch - 69) / 12);
+        }
+
+        let currentMidiData = null;
+        let parsedNotes = null;
+
+        async function loadMIDIData() {
+            if (!currentSongId) return;
+            try {
+                const res = await fetch(USER_API_BASE + '/songs/' + currentSongId + '/midi', {
+                    credentials: 'same-origin'
+                });
+                if (!res.ok) throw new Error('Failed to fetch MIDI');
+                currentMidiData = await res.arrayBuffer();
+                parsedNotes = parseMIDINotes(currentMidiData);
+                console.log('Loaded ' + parsedNotes.length + ' MIDI notes');
+                // Clear any previous error message
+                document.getElementById('waveform-placeholder').textContent = '📊 MIDI 已載入 (' + parsedNotes.length + ' 音符)';
+            } catch (err) {
+                console.error('Failed to load MIDI:', err);
+                currentMidiData = null;
+                parsedNotes = null;
+                document.getElementById('waveform-placeholder').textContent = '❌ MIDI 載入失敗：' + err.message;
+            }
+        }
+
+        function playRange(startTime, endTime) {
+            if (!parsedNotes || parsedNotes.length === 0) {
+                alert('MIDI 尚未載入，請先選擇歌曲');
+                return;
+            }
+
+            // Stop any existing playback
+            stopPlayback();
+
+            const ctx = getAudioCtx();
+            const gainNode = ctx.createGain();
+            gainNode.gain.value = 0.3;
+            gainNode.connect(ctx.destination);
+
+            const dur = endTime - startTime;
+            const currentTime = ctx.currentTime;
+
+            // Filter notes in range
+            const rangeNotes = parsedNotes.filter(n =>
+                n.start >= startTime && n.start < endTime
+            );
+
+            if (rangeNotes.length === 0) {
+                console.log('No notes in range');
+                return;
+            }
+
+            console.log('Playing ' + rangeNotes.length + ' notes');
+
+            // Store nodes for stop
+            const activeOscillators = [];
+
+            for (const n of rangeNotes) {
+                const osc = ctx.createOscillator();
+                const noteGain = ctx.createGain();
+
+                osc.type = 'triangle';
+                osc.frequency.value = midiPitchToFreq(n.pitch);
+
+                const localStart = n.start - startTime;
+                const noteDur = Math.min(n.dur, dur - localStart);
+                if (noteDur <= 0.01) continue;
+
+                noteGain.gain.setValueAtTime(0, currentTime + localStart);
+                noteGain.gain.linearRampToValueAtTime(0.3, currentTime + localStart + 0.005);
+                noteGain.gain.setValueAtTime(0.3, currentTime + localStart + noteDur - 0.01);
+                noteGain.gain.linearRampToValueAtTime(0, currentTime + localStart + noteDur);
+
+                osc.connect(noteGain);
+                noteGain.connect(gainNode);
+
+                osc.start(currentTime + localStart);
+                osc.stop(currentTime + localStart + noteDur + 0.01);
+
+                activeOscillators.push(osc);
+                playbackNodes.push(osc);
+                playbackNodes.push(noteGain);
+            }
+
+            // Auto-stop after duration
+            playbackTimer = setTimeout(() => stopPlayback(), dur * 1000 + 200);
+        }
+
+        function stopPlayback() {
+            if (playbackTimer) {
+                clearTimeout(playbackTimer);
+                playbackTimer = null;
+            }
+            for (const node of playbackNodes) {
+                try { node.disconnect(); } catch(e) {}
+            }
+            playbackNodes = [];
+        }
+
+        function togglePlay(startTime, endTime, btnId) {
+            const btn = document.getElementById(btnId);
+            if (!btn) return;
+
+            if (btn.dataset.playing === 'true') {
+                stopPlayback();
+                btn.textContent = '▶️';
+                btn.dataset.playing = 'false';
+                return;
+            }
+
+            playRange(startTime, endTime);
+            btn.textContent = '⏹';
+            btn.dataset.playing = 'true';
+
+            // Auto-revert when playback ends
+            const checkStop = setInterval(() => {
+                if (playbackTimer === null && playbackNodes.length === 0) {
+                    btn.textContent = '▶️';
+                    btn.dataset.playing = 'false';
+                    clearInterval(checkStop);
+                }
+            }, 500);
+        }
+
+        // --- API helpers ---
+        async function api(path, options = {}) {
+            const base = path.startsWith('/admin') ? API_BASE : USER_API_BASE;
+            const finalPath = path.startsWith('/admin') ? path.replace('/admin', '') : path;
+            const res = await fetch(base + finalPath, {
+                credentials: 'same-origin',
+                headers: options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
+                ...options,
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({ error: res.statusText }));
+                throw new Error(err.error || `HTTP ${res.status}`);
+            }
+            return res.json();
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function formatTime(sec) {
+            if (sec == null) return '0:00';
+            const m = Math.floor(sec / 60);
+            const s = Math.floor(sec % 60);
+            return m + ':' + s.toString().padStart(2, '0');
+        }
+
+        function formatDuration(start, end) {
+            if (start == null || end == null) return '';
+            const d = end - start;
+            if (d < 60) return d.toFixed(0) + '秒';
+            return (d / 60).toFixed(1) + '分';
+        }
+
+        let currentSongId = null;
+        let currentSong = null;
+        let currentSongFull = null;
+        let structures = [];
+        let editingNode = null;
+        let editingIsNew = false;
+
+        // --- Tick calculation ---
+        const DEFAULT_PPQ = 480;
+        const DEFAULT_TEMPO_USEC = 500000;
+
+        function secToTick(timeSec, tempoMap, ticksPerQuarter) {
+            const ppq = ticksPerQuarter || DEFAULT_PPQ;
+            if (!tempoMap || tempoMap.length === 0) {
+                const secPerTick = DEFAULT_TEMPO_USEC / (ppq * 1000000);
+                return Math.round(timeSec / secPerTick);
+            }
+            let i = 0;
+            for (let j = 0; j < tempoMap.length; j++) {
+                if (tempoMap[j].time_sec <= timeSec) {
+                    i = j;
+                }
+            }
+            const entry = tempoMap[i];
+            const secPerTick = entry.tempo_usec_per_qn / (ppq * 1000000);
+            const deltaSec = timeSec - entry.time_sec;
+            const tick = entry.tick + (deltaSec / secPerTick);
+            return Math.max(0, Math.round(tick));
+        }
+
+        function setupTickAutoCalc() {
+            const startInput = document.getElementById('edit-start');
+            const endInput = document.getElementById('edit-end');
+            const startTickInput = document.getElementById('edit-start-tick');
+            const endTickInput = document.getElementById('edit-end-tick');
+
+            function recalcTicks() {
+                const startTime = parseFloat(startInput.value) || 0;
+                const endTime = parseFloat(endInput.value) || 0;
+                const tempoMap = currentSongFull ? (currentSongFull.tempo_map || []) : [];
+                const ppq = currentSongFull ? (currentSongFull.ticks_per_quarter || DEFAULT_PPQ) : DEFAULT_PPQ;
+                startTickInput.value = secToTick(startTime, tempoMap, ppq);
+                endTickInput.value = secToTick(endTime, tempoMap, ppq);
+            }
+
+            startInput.addEventListener('input', recalcTicks);
+            endInput.addEventListener('input', recalcTicks);
+        }
+
+        // --- URL params ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const initialSongId = urlParams.get('song');
+
+        // --- Load songs into dropdown ---
+        async function loadSongsDropdown() {
+            try {
+                const songs = await api('/songs');
+                const select = document.getElementById('song-select');
+                select.innerHTML = '<option value="">請選擇歌曲...</option>';
+                for (const s of songs) {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.title + ' - ' + (s.artist || '未知');
+                    select.appendChild(opt);
+                }
+
+                if (initialSongId) {
+                    select.value = initialSongId;
+                    onSongChange();
+                }
+            } catch (err) {
+                console.error('Failed to load songs:', err);
+                document.getElementById('structure-tree').innerHTML =
+                    `<div style="text-align: center; color: #e74c3c; padding: 20px;">無法載入歌曲清單：${err.message}</div>`;
+            }
+        }
+
+        // --- Load tracks into lyrics track selector ---
+        async function loadTracksForLyrics() {
+            if (!currentSongId) return;
+            try {
+                const song = await api('/songs/' + currentSongId);
+                currentSong = song;
+                currentSongFull = song;
+                const select = document.getElementById('lyrics-track-select');
+                select.innerHTML = '<option value="">選擇聲部...</option>';
+                for (const t of song.tracks) {
+                    const opt = document.createElement('option');
+                    opt.value = t.id;
+                    opt.textContent = t.name + (t.is_vocal ? ' 🎤' : '') + ' (' + t.note_count + ' 音符)';
+                    select.appendChild(opt);
+                }
+                if (select.options.length > 1) {
+                    select.selectedIndex = 1;
+                }
+            } catch (err) {
+                console.error('Failed to load tracks:', err);
+            }
+        }
+
+        // --- Load structures tree ---
+        async function onSongChange() {
+            const select = document.getElementById('song-select');
+            currentSongId = select.value || null;
+
+            if (!currentSongId) {
+                document.getElementById('structure-tree').innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">請先選擇歌曲</div>';
+                document.getElementById('timeline').innerHTML = '';
+                document.getElementById('waveform-placeholder').textContent = '📊 請先選擇歌曲';
+                document.getElementById('stat-sections').textContent = '0';
+                document.getElementById('stat-phrases').textContent = '0';
+                document.getElementById('stat-duration').textContent = '0:00';
+                return;
+            }
+
+            await loadTracksForLyrics();
+            await loadMIDIData(); // Load MIDI for playback
+            await loadStructures();
+        }
+
+        async function loadStructures() {
+            if (!currentSongId) return;
+
+            const trackId = document.getElementById('lyrics-track-select').value;
+            let path = '/songs/' + currentSongId + '/structures';
+            if (trackId) {
+                path += '?track_id=' + encodeURIComponent(trackId);
+            }
+
+            try {
+                const data = await api(path);
+                structures = data.structures || [];
+
+                renderTimeline();
+                renderTree();
+                updateStats();
+            } catch (err) {
+                console.error('Failed to load structures:', err);
+                document.getElementById('structure-tree').innerHTML =
+                    `<div style="text-align: center; color: #e74c3c; padding: 20px;">載入失敗：${err.message}</div>`;
+            }
+        }
+
+        // --- Render timeline ---
+        function renderTimeline() {
+            const timeline = document.getElementById('timeline');
+            const placeholder = document.getElementById('waveform-placeholder');
+
+            if (structures.length === 0) {
+                timeline.innerHTML = '<div style="text-align:center;color:#999;padding:20px;">尚無段落結構</div>';
+                placeholder.textContent = '📊 尚無段落結構，請先建立';
+                return;
+            }
+
+            placeholder.textContent = '📊 結構預覽 (' + structures.length + ' 個段落)';
+
+            let maxTime = 0;
+            for (const s of structures) {
+                if (s.end_time > maxTime) maxTime = s.end_time;
+                if (s.phrases) {
+                    for (const p of s.phrases) {
+                        if (p.end_time > maxTime) maxTime = p.end_time;
+                    }
+                }
+            }
+            if (maxTime === 0) maxTime = 1;
+
+            timeline.innerHTML = '';
+            for (const s of structures) {
+                const left = (s.start_time / maxTime * 100).toFixed(1);
+                const width = ((s.end_time - s.start_time) / maxTime * 100).toFixed(1);
+                const block = document.createElement('div');
+                block.className = 'section-block';
+                block.style.cssText = `left: ${left}%; width: ${width}%; cursor: pointer;`;
+                block.textContent = s.title;
+                block.onclick = () => editStructure(s.id, 'SECTION');
+                timeline.appendChild(block);
+
+                if (s.phrases) {
+                    for (const p of s.phrases) {
+                        const pLeft = (p.start_time / maxTime * 100).toFixed(1);
+                        const pWidth = ((p.end_time - p.start_time) / maxTime * 100).toFixed(1);
+                        const pBlock = document.createElement('div');
+                        pBlock.className = 'section-block phrase';
+                        pBlock.style.cssText = `left: ${pLeft}%; width: ${pWidth}%; cursor: pointer;`;
+                        pBlock.textContent = p.title;
+                        pBlock.onclick = () => editStructure(p.id, 'PHRASE');
+                        timeline.appendChild(pBlock);
+                    }
+                }
+            }
+        }
+
+        // --- Render tree with play buttons ---
+        function renderTree() {
+            const container = document.getElementById('structure-tree');
+            if (structures.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">尚無段落結構，請點擊「+ 新增段落」建立</div>';
+                return;
+            }
+
+            let html = '';
+            for (const s of structures) {
+                const playBtnId = 'play-section-' + s.id;
+                html += `
+                    <div class="tree-item">
+                        <div class="tree-section">
+                            <div class="tree-section-header">
+                                <span class="tree-section-title">🎵 ${escapeHtml(s.title)}</span>
+                                <div>
+                                    <button class="btn btn-sm btn-play" id="${playBtnId}" onclick="togglePlay(${s.start_time}, ${s.end_time}, '${playBtnId}')" title="試聽段落">▶️</button>
+                                    <button class="btn btn-secondary btn-sm" onclick="editStructure('${s.id}', 'SECTION')">編輯</button>
+                                    <button class="btn btn-danger btn-sm" onclick="deleteStructure('${s.id}', '${escapeHtml(s.title)}')">刪除</button>
+                                </div>
+                            </div>
+                            <div class="tree-section-time">${formatTime(s.start_time)} - ${formatTime(s.end_time)} (${formatDuration(s.start_time, s.end_time)})</div>
+                `;
+
+                if (s.phrases) {
+                    for (const p of s.phrases) {
+                        const lyricsVal = p.lyrics || '';
+                        const playPhraseId = 'play-phrase-' + p.id;
+                        html += `
+                            <div class="tree-phrase">
+                                <div style="flex:1;">
+                                    <div>
+                                        <span class="tree-phrase-title">📝 ${escapeHtml(p.title)}</span>
+                                        <span class="tree-phrase-time"> ${formatTime(p.start_time)} - ${formatTime(p.end_time)}</span>
+                                        <button class="btn btn-sm btn-play" id="${playPhraseId}" onclick="togglePlay(${p.start_time}, ${p.end_time}, '${playPhraseId}')" title="試聽句子">▶️</button>
+                                    </div>
+                                    <input class="lyrics-input" type="text" id="lyrics-${p.id}" placeholder="輸入歌詞..." value="${escapeHtml(lyricsVal)}">
+                                </div>
+                                <button class="btn btn-secondary btn-sm" onclick="editStructure('${p.id}', 'PHRASE')">編輯</button>
+                            </div>
+                        `;
+                    }
+                }
+
+                html += `</div></div>`;
+            }
+            container.innerHTML = html;
+        }
+
+        // --- Update stats ---
+        function updateStats() {
+            let maxTime = 0;
+            for (const s of structures) {
+                if (s.end_time > maxTime) maxTime = s.end_time;
+                if (s.phrases) {
+                    for (const p of s.phrases) {
+                        if (p.end_time > maxTime) maxTime = p.end_time;
+                    }
+                }
+            }
+
+            let phraseCount = 0;
+            for (const s of structures) {
+                if (s.phrases) phraseCount += s.phrases.length;
+            }
+
+            document.getElementById('stat-sections').textContent = structures.length;
+            document.getElementById('stat-phrases').textContent = phraseCount;
+            document.getElementById('stat-duration').textContent = formatTime(maxTime);
+        }
+
+        // --- Edit / Add structure ---
+        async function editStructure(id, type) {
+            let node = null;
+            for (const s of structures) {
+                if (s.id === id) { node = s; break; }
+                if (s.phrases) {
+                    for (const p of s.phrases) {
+                        if (p.id === id) { node = p; break; }
+                    }
+                    if (node) break;
+                }
+            }
+
+            if (!node) {
+                alert('找不到此結構');
+                return;
+            }
+
+            editingNode = node;
+            editingIsNew = false;
+
+            const panel = document.getElementById('edit-panel');
+            document.getElementById('edit-panel-title').textContent = '✏️ 編輯：' + node.title;
+            document.getElementById('edit-title').value = node.title || '';
+            document.getElementById('edit-type').value = type || node.type || 'SECTION';
+            document.getElementById('edit-start').value = node.start_time || 0;
+            document.getElementById('edit-end').value = node.end_time || 0;
+            document.getElementById('edit-start-tick').value = node.start_tick || 0;
+            document.getElementById('edit-end-tick').value = node.end_tick || 0;
+            // Trigger tick recalculation from time inputs
+            document.getElementById('edit-start').dispatchEvent(new Event('input'));
+            document.getElementById('edit-order').value = node.order_index || 0;
+            document.getElementById('edit-lyrics').value = node.lyrics || '';
+
+            const parentSelect = document.getElementById('edit-parent');
+            parentSelect.innerHTML = '<option value="">無（段落）</option>';
+            for (const s of structures) {
+                if (s.id !== node.id) {
+                    const opt = document.createElement('option');
+                    opt.value = s.id;
+                    opt.textContent = s.title;
+                    if (s.id === node.parent_id) opt.selected = true;
+                    parentSelect.appendChild(opt);
+                }
+            }
+            const isPhrase = (type === 'PHRASE' || node.type === 'PHRASE');
+            parentSelect.style.display = isPhrase ? 'block' : 'none';
+            parentSelect.closest('.form-group').style.display = isPhrase ? 'block' : 'none';
+
+            panel.style.display = 'block';
+            panel.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function showAddSection() {
+            if (!currentSongId) {
+                alert('請先選擇歌曲');
+                return;
+            }
+
+            editingNode = null;
+            editingIsNew = true;
+
+            const panel = document.getElementById('edit-panel');
+            document.getElementById('edit-panel-title').textContent = '✏️ 新增段落';
+            document.getElementById('edit-title').value = '';
+            document.getElementById('edit-type').value = 'SECTION';
+            document.getElementById('edit-start').value = 0;
+            document.getElementById('edit-end').value = 0;
+            document.getElementById('edit-start-tick').value = 0;
+            document.getElementById('edit-end-tick').value = 0;
+            // Trigger tick recalculation from time inputs
+            document.getElementById('edit-start').dispatchEvent(new Event('input'));
+            document.getElementById('edit-order').value = structures.length + 1;
+
+            const parentSelect = document.getElementById('edit-parent');
+            parentSelect.innerHTML = '<option value="">無（段落）</option>';
+            for (const s of structures) {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = s.title;
+                parentSelect.appendChild(opt);
+            }
+            parentSelect.style.display = 'none';
+            parentSelect.closest('.form-group').style.display = 'none';
+
+            panel.style.display = 'block';
+            panel.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        document.getElementById('edit-type').addEventListener('change', function() {
+            const parentSelect = document.getElementById('edit-parent');
+            const parentGroup = parentSelect.closest('.form-group');
+            if (this.value === 'PHRASE') {
+                parentSelect.style.display = 'block';
+                parentGroup.style.display = 'block';
+            } else {
+                parentSelect.style.display = 'none';
+                parentGroup.style.display = 'none';
+            }
+        });
+
+        async function saveEdit() {
+            const title = document.getElementById('edit-title').value.trim();
+            const type = document.getElementById('edit-type').value;
+            const startTime = parseFloat(document.getElementById('edit-start').value) || 0;
+            const endTime = parseFloat(document.getElementById('edit-end').value) || 0;
+            const startTick = parseInt(document.getElementById('edit-start-tick').value) || 0;
+            const endTick = parseInt(document.getElementById('edit-end-tick').value) || 0;
+            const orderIdx = parseInt(document.getElementById('edit-order').value) || 0;
+            const parentId = document.getElementById('edit-parent').value;
+
+            if (!title) { alert('請輸入標題'); return; }
+            if (endTime <= startTime) { alert('結束時間必須大於開始時間'); return; }
+
+            try {
+                if (editingIsNew) {
+                    const payload = { structures: [] };
+
+                    if (type === 'SECTION') {
+                        payload.structures.push({
+                            type: 'SECTION',
+                            title: title,
+                            start_time: startTime,
+                            end_time: endTime,
+                            order_index: orderIdx,
+                            phrases: [],
+                        });
+                    } else if (type === 'PHRASE' && parentId) {
+                        const parentSection = structures.find(s => s.id === parentId);
+                        if (parentSection) {
+                            const existingPhrases = (parentSection.phrases || []).map(p => ({
+                                type: p.type,
+                                title: p.title,
+                                start_time: p.start_time,
+                                end_time: p.end_time,
+                                order_index: p.order_index,
+                            }));
+                            payload.structures.push({
+                                type: 'SECTION',
+                                title: parentSection.title,
+                                start_time: parentSection.start_time,
+                                end_time: parentSection.end_time,
+                                order_index: parentSection.order_index,
+                                phrases: [
+                                    ...existingPhrases,
+                                    {
+                                        type: 'PHRASE',
+                                        title: title,
+                                        start_time: startTime,
+                                        end_time: endTime,
+                                        order_index: orderIdx,
+                                    },
+                                ],
+                            });
+                            await api('/admin/songs/' + currentSongId + '/structures/' + parentId, {
+                                method: 'DELETE',
+                            });
+                        } else {
+                            payload.structures.push({
+                                type: 'SECTION',
+                                title: title,
+                                start_time: startTime,
+                                end_time: endTime,
+                                order_index: orderIdx,
+                                phrases: [{
+                                    type: 'PHRASE',
+                                    title: title,
+                                    start_time: startTime,
+                                    end_time: endTime,
+                                    order_index: 1,
+                                }],
+                            });
+                        }
+                    } else {
+                        payload.structures.push({
+                            type: 'SECTION',
+                            title: title,
+                            start_time: startTime,
+                            end_time: endTime,
+                            order_index: orderIdx,
+                            phrases: [],
+                        });
+                    }
+
+                    await api('/admin/songs/' + currentSongId + '/structures', {
+                        method: 'POST',
+                        body: JSON.stringify(payload),
+                    });
+                } else {
+                    const payload = {};
+                    if (editingNode.title !== title) payload.title = title;
+                    if (editingNode.start_time !== startTime) payload.start_time = startTime;
+                    if (editingNode.end_time !== endTime) payload.end_time = endTime;
+                    if (editingNode.order_index !== orderIdx) payload.order_index = orderIdx;
+
+                    if (Object.keys(payload).length > 0) {
+                        await api('/admin/songs/' + currentSongId + '/structures/' + editingNode.id, {
+                            method: 'PUT',
+                            body: JSON.stringify(payload),
+                        });
+                    }
+                }
+
+                cancelEdit();
+                await loadStructures();
+            } catch (err) {
+                alert('儲存失敗：' + err.message);
+            }
+        }
+
+        function cancelEdit() {
+            document.getElementById('edit-panel').style.display = 'none';
+            editingNode = null;
+            editingIsNew = false;
+        }
+
+        async function deleteStructure(id, title) {
+            if (!confirm(`確定刪除「${title}」？\n此操作無法復原。`)) return;
+
+            try {
+                await api('/admin/songs/' + currentSongId + '/structures/' + id, { method: 'DELETE' });
+                await loadStructures();
+            } catch (err) {
+                alert('刪除失敗：' + err.message);
+            }
+        }
+
+        // --- Lyrics ---
+        async function saveAllLyrics() {
+            const trackId = document.getElementById('lyrics-track-select').value;
+            if (!trackId) { alert('請先選擇聲部'); return; }
+            if (!currentSongId) { alert('請先選擇歌曲'); return; }
+
+            const lyricsPayload = [];
+            for (const s of structures) {
+                if (s.phrases) {
+                    for (const p of s.phrases) {
+                        const input = document.getElementById('lyrics-' + p.id);
+                        if (input && input.value.trim()) {
+                            lyricsPayload.push({
+                                track_id: trackId,
+                                structure_id: p.id,
+                                lyrics: input.value.trim(),
+                            });
+                        }
+                    }
+                }
+            }
+
+            if (lyricsPayload.length === 0) { alert('沒有歌詞需要儲存'); return; }
+
+            try {
+                const res = await api('/admin/songs/' + currentSongId + '/lyrics', {
+                    method: 'POST',
+                    body: JSON.stringify({ lyrics: lyricsPayload }),
+                });
+                alert('✅ 已儲存 ' + res.updated + '/' + res.total + ' 句歌詞');
+            } catch (err) {
+                alert('儲存歌詞失敗：' + err.message);
+            }
+        }
+
+        // --- Init ---
+        setupTickAutoCalc();
+        loadSongsDropdown();
+    </script>
+</body>
+</html>

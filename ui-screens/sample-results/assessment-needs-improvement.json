@@ -1,0 +1,114 @@
+{
+  "assessment_id": "d4e5f6a7-b8c9-0123-def0-234567890123",
+  "user_id": "u2345678-90ab-cdef-0123-456789abcdef",
+  "song_id": "s7654321-0fed-cba9-8765-43210fedcba8",
+  "track_id": "t3333333-4444-5555-6666-777777777777",
+  "structure_id": "st4444444-5555-6666-7777-888888888888",
+  "score": 58.0,
+  "total_notes": 48,
+  "matched_notes": 28,
+  "average_pitch_deviation": -85.3,
+  "average_duration_deviation": 0.25,
+  "pitch_deviation": [-85, 120, -95, 78, -110, 65, -130, 92, -45, 125, -78, 55, -105, 88, -62, 135, -48, 72, -115, 98, -55, 142, -68, 82, -95, 58, -125, 75, -42, 108, -88, 65, -135, 92, -52, 118, -75, 48, -102, 85, -58, 128, -72, 62, -115, 95, -45, 78],
+  "duration_deviation": [0.15, -0.22, 0.35, -0.18, 0.28, 0.42, -0.15, 0.25, 0.38, -0.28, 0.18, 0.32, -0.12, 0.45, -0.22, 0.15, 0.38, -0.25, 0.12, 0.28, -0.35, 0.22, 0.48, -0.18, 0.32, 0.15, -0.42, 0.25, 0.38, -0.15, 0.28, 0.52, -0.22, 0.18, 0.35, -0.28, 0.12, 0.45, -0.32, 0.22, 0.38, -0.15, 0.28, 0.55, -0.25, 0.18, 0.32, -0.42],
+  "note_comparison": [
+    {
+      "note_index": 0,
+      "ref_pitch": 60,
+      "ref_pitch_name": "C4",
+      "user_pitch": 54,
+      "user_pitch_name": "F#3/Gb3",
+      "ref_start_time": 0.0,
+      "ref_end_time": 0.75,
+      "user_start_time": 0.15,
+      "user_end_time": 0.9,
+      "pitch_deviation_cents": -85,
+      "duration_deviation_sec": 0.15,
+      "match_status": "missed"
+    },
+    {
+      "note_index": 1,
+      "ref_pitch": 62,
+      "ref_pitch_name": "D4",
+      "user_pitch": 70,
+      "user_pitch_name": "A#4/Bb4",
+      "ref_start_time": 0.75,
+      "ref_end_time": 1.5,
+      "user_start_time": 0.53,
+      "user_end_time": 1.28,
+      "pitch_deviation_cents": 120,
+      "duration_deviation_sec": -0.22,
+      "match_status": "missed"
+    },
+    {
+      "note_index": 2,
+      "ref_pitch": 64,
+      "ref_pitch_name": "E4",
+      "user_pitch": 58,
+      "user_pitch_name": "A#3/Bb3",
+      "ref_start_time": 1.5,
+      "ref_end_time": 2.25,
+      "user_start_time": 1.85,
+      "user_end_time": 2.6,
+      "pitch_deviation_cents": -95,
+      "duration_deviation_sec": 0.35,
+      "match_status": "missed"
+    },
+    {
+      "note_index": 3,
+      "ref_pitch": 65,
+      "ref_pitch_name": "F4",
+      "user_pitch": 70,
+      "user_pitch_name": "A#4/Bb4",
+      "ref_start_time": 2.25,
+      "ref_end_time": 3.0,
+      "user_start_time": 2.07,
+      "user_end_time": 2.82,
+      "pitch_deviation_cents": 78,
+      "duration_deviation_sec": -0.18,
+      "match_status": "warning"
+    },
+    {
+      "note_index": 4,
+      "ref_pitch": 67,
+      "ref_pitch_name": "G4",
+      "user_pitch": 60,
+      "user_pitch_name": "C4",
+      "ref_start_time": 3.0,
+      "ref_end_time": 3.75,
+      "user_start_time": 3.28,
+      "user_end_time": 4.17,
+      "pitch_deviation_cents": -110,
+      "duration_deviation_sec": 0.28,
+      "match_status": "missed"
+    }
+  ],
+  "segment_scores": {
+    "intro": null,
+    "verse_a": null,
+    "verse_b": null,
+    "chorus": {
+      "score": 58.0,
+      "matched_notes": 28,
+      "total_notes": 48,
+      "avg_pitch_deviation": -85.3,
+      "avg_duration_deviation": 0.25
+    },
+    "outro": null
+  },
+  "created_at": "2024-01-14T10:30:15Z",
+  "metadata": {
+    "song_title": "告白氣球",
+    "artist": "周杰倫",
+    "track_name": "Vocal",
+    "structure_name": "Chorus",
+    "structure_start_time": 52.0,
+    "structure_end_time": 105.0
+  },
+  "recommendations": [
+    "音準偏差較大，建議先跟著原唱練習音高",
+    "時長控制不穩定，注意節拍器的使用",
+    "副歌部分音域較高，可以先降Key練習",
+    "建議分段練習，先掌握每個樂句再整合"
+  ]
+}

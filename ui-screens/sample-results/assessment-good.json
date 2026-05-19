@@ -1,0 +1,104 @@
+{
+  "assessment_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+  "user_id": "u2345678-90ab-cdef-0123-456789abcdef",
+  "song_id": "s8765432-10fe-dcba-8765-43210fedcba9",
+  "track_id": "t2222222-3333-4444-5555-666666666666",
+  "structure_id": null,
+  "score": 85.0,
+  "total_notes": 156,
+  "matched_notes": 132,
+  "average_pitch_deviation": -8.5,
+  "average_duration_deviation": 0.12,
+  "pitch_deviation": [-8, 12, -25, 5, 18, -3, 45, -12, 8, 22, -15, 3, 35, -8, 12, 0, -28, 15, 5, -2, 42, -18, 8, 12, -5, 25, -10, 3, 18, -7, 32, -15, 8, 5, -3, 22, -12, 7, 15, -5, 28, -10, 5, 12, -8, 18, -3, 7, 25, -12],
+  "duration_deviation": [0.05, -0.08, 0.15, 0.02, -0.1, 0.08, 0.22, -0.05, 0.03, 0.12, -0.08, 0.05, 0.18, -0.03, 0.08, 0.0, -0.15, 0.1, 0.02, -0.05, 0.2, -0.12, 0.05, 0.08, -0.03, 0.15, -0.08, 0.02, 0.1, -0.05, 0.18, -0.08, 0.05, 0.03, -0.02, 0.12, -0.05, 0.08, 0.1, -0.03, 0.15, -0.08, 0.02, 0.08, -0.05, 0.12, -0.02, 0.05, 0.15, -0.08],
+  "note_comparison": [
+    {
+      "note_index": 0,
+      "ref_pitch": 62,
+      "ref_pitch_name": "D4",
+      "user_pitch": 62,
+      "user_pitch_name": "D4",
+      "ref_start_time": 0.0,
+      "ref_end_time": 0.75,
+      "user_start_time": 0.05,
+      "user_end_time": 0.8,
+      "pitch_deviation_cents": -8,
+      "duration_deviation_sec": 0.05,
+      "match_status": "matched"
+    },
+    {
+      "note_index": 1,
+      "ref_pitch": 64,
+      "ref_pitch_name": "E4",
+      "user_pitch": 65,
+      "user_pitch_name": "F4",
+      "ref_start_time": 0.75,
+      "ref_end_time": 1.5,
+      "user_start_time": 0.67,
+      "user_end_time": 1.42,
+      "pitch_deviation_cents": 12,
+      "duration_deviation_sec": -0.08,
+      "match_status": "matched"
+    },
+    {
+      "note_index": 2,
+      "ref_pitch": 65,
+      "ref_pitch_name": "F4",
+      "user_pitch": 67,
+      "user_pitch_name": "G4",
+      "ref_start_time": 1.5,
+      "ref_end_time": 2.25,
+      "user_start_time": 1.65,
+      "user_end_time": 2.4,
+      "pitch_deviation_cents": -25,
+      "duration_deviation_sec": 0.15,
+      "match_status": "warning"
+    }
+  ],
+  "segment_scores": {
+    "intro": {
+      "score": 88.0,
+      "matched_notes": 18,
+      "total_notes": 20,
+      "avg_pitch_deviation": -5.2,
+      "avg_duration_deviation": 0.08
+    },
+    "verse_a": {
+      "score": 82.0,
+      "matched_notes": 28,
+      "total_notes": 35,
+      "avg_pitch_deviation": -10.5,
+      "avg_duration_deviation": 0.15
+    },
+    "verse_b": {
+      "score": 84.0,
+      "matched_notes": 30,
+      "total_notes": 36,
+      "avg_pitch_deviation": -8.0,
+      "avg_duration_deviation": 0.1
+    },
+    "chorus": {
+      "score": 86.0,
+      "matched_notes": 42,
+      "total_notes": 48,
+      "avg_pitch_deviation": -7.5,
+      "avg_duration_deviation": 0.12
+    },
+    "outro": {
+      "score": 85.0,
+      "matched_notes": 14,
+      "total_notes": 17,
+      "avg_pitch_deviation": -9.0,
+      "avg_duration_deviation": 0.14
+    }
+  },
+  "created_at": "2024-01-15T13:45:22Z",
+  "metadata": {
+    "song_title": "小幸運",
+    "artist": "徐世珍",
+    "track_name": "Main Vocal",
+    "structure_name": "全曲",
+    "structure_start_time": 0.0,
+    "structure_end_time": 252.0
+  }
+}

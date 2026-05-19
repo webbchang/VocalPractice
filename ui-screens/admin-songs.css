@@ -1,0 +1,96 @@
+
+        .form-group input[type="text"],
+        .form-group input[type="file"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .song-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        .song-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .song-card h4 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        .song-card p {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 12px;
+        }
+        .track-list {
+            background: #f8f9fa;
+            border-radius: 4px;
+            padding: 12px;
+            margin-top: 12px;
+        }
+        .track-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+        }
+        .track-item:last-child {
+            border-bottom: none;
+        }
+        .track-name {
+            font-weight: 500;
+        }
+        .track-info {
+            color: #999;
+            font-size: 12px;
+        }
+        .vocal-badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 11px;
+            background: #e74c3c;
+            color: white;
+            margin-left: 8px;
+        }
+        .upload-area {
+            border: 2px dashed #3498db;
+            border-radius: 8px;
+            padding: 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .upload-area:hover {
+            background: #ebf5fb;
+            border-color: #2980b9;
+        }
+        .upload-area.dragover {
+            background: #d4e6f1;
+        }
+        .upload-icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background: #eee;
+            border-radius: 2px;
+            margin-top: 12px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #3498db;
+            width: 0%;
+            transition: width 0.3s;
+        }

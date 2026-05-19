@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vocal Practice - 使用者後台</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+        }
+        .header {
+            background: #16213e;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .header h1 {
+            font-size: 20px;
+            color: #fff;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .user-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #3498db;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: #3498db;
+            color: white;
+        }
+        .btn-primary:hover {
+            background: #2980b9;
+        }
+        .btn-success {
+            background: #27ae60;
+            color: white;
+        }
+        .btn-danger {
+            background: #e74c3c;
+            color: white;
+        }
+        .btn-secondary {
+            background: #95a5a6;
+            color: white;
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        .btn-icon {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            background: #2c3e50;
+            color: #888;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 16px;
+        }
+        .btn-icon:hover {
+            background: #34495e;
+            color: #fff;
+        }
+        .btn-icon.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+        .btn-icon.disabled:hover {
+            background: #2c3e50;
+            color: #888;
+        }
+        .main-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: 280px 1fr;
+            gap: 24px;
+        }
+        .sidebar {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 20px;
+            height: fit-content;
+        }
+        .sidebar h3 {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .user-profile {
+            text-align: center;
+            padding: 20px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .profile-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: #3498db;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            font-weight: 600;
+            margin: 0 auto 12px;
+        }
+        .profile-name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        .profile-email {
+            font-size: 13px;
+            color: #888;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .stat-item {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: #3498db;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+        .content-area {
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+        }
+        .card {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .card h3 {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #1a1a2e;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            color: #888;
+            transition: all 0.2s;
+        }
+        .tab:hover {
+            color: #fff;
+        }
+        .tab.active {
+            background: #3498db;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .storage-panel {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .storage-title {
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .storage-bar {
+            width: 100%;
+            height: 10px;
+            background: #2c3e50;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+        .storage-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            border-radius: 5px;
+            transition: width 0.3s;
+        }
+        .storage-fill.warning {
+            background: linear-gradient(90deg, #f39c12, #e74c3c);
+        }
+        .storage-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 12px;
+            color: #888;
+        }
+        .history-item {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .history-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .history-score {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            margin-right: 16px;
+        }
+        .score-high { background: #d4edda; color: #155724; }
+        .score-mid { background: #fff3cd; color: #856404; }
+        .score-low { background: #f8d7da; color: #721c24; }
+        .history-info {
+            flex: 1;
+        }
+        .history-song {
+            font-size: 14px;
+            font-weight: 600;
+        }
+        .history-detail {
+            font-size: 12px;
+            color: #888;
+        }
+        .history-date {
+            font-size: 12px;
+            color: #666;
+        }
+        .sync-status {
+            display: flex;
+            gap: 12px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid #2c3e50;
+        }
+        .sync-item {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #16213e;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+        .sync-item.local {
+            border-left: 3px solid #3498db;
+        }
+        .sync-item.cloud {
+            border-left: 3px solid #27ae60;
+        }
+        .sync-item.unavailable {
+            opacity: 0.4;
+        }
+        .sync-item.unavailable .sync-icon {
+            filter: grayscale(1);
+        }
+        .sync-icon {
+            font-size: 16px;
+        }
+        .sync-label {
+            flex: 1;
+        }
+        .sync-size {
+            color: #888;
+            font-size: 12px;
+        }
+        .sync-tooltip {
+            font-size: 11px;
+            color: #f39c12;
+            margin-top: 4px;
+        }
+        .message-item {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+            border-left: 4px solid #3498db;
+        }
+        .message-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .message-title {
+            font-weight: 600;
+            color: #fff;
+        }
+        .message-date {
+            font-size: 12px;
+            color: #888;
+        }
+        .message-content {
+            font-size: 14px;
+            color: #ccc;
+            line-height: 1.5;
+        }
+        .message-unread {
+            border-left-color: #e74c3c;
+        }
+        .platform-notice {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            border-left: 4px solid #f39c12;
+            font-size: 13px;
+            color: #f39c12;
+        }
+        .platform-notice strong {
+            display: block;
+            margin-bottom: 4px;
+            color: #fff;
+        }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.visible {
+            display: flex;
+        }
+        .modal {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 600px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        .modal h3 {
+            margin-bottom: 16px;
+            color: #fff;
+        }
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 20px;
+            justify-content: flex-end;
+        }
+        .assessment-detail {
+            background: #1a1a2e;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        .assessment-detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #2c3e50;
+        }
+        .assessment-detail-row:last-child {
+            border-bottom: none;
+        }
+        .detail-label {
+            color: #888;
+        }
+        .detail-value {
+            color: #fff;
+            font-weight: 600;
+        }
+        .legend {
+            display: flex;
+            gap: 16px;
+            margin-top: 16px;
+            padding: 12px;
+            background: #1a1a2e;
+            border-radius: 8px;
+            font-size: 12px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .legend-icon {
+            width: 16px;
+            height: 16px;
+            border-radius: 3px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🎤 Vocal Practice - 使用者後台</h1>
+        <div class="header-right">
+            <div class="user-info">
+                <div class="user-avatar">S</div>
+                <span>singer01</span>
+            </div>
+            <button class="btn btn-primary" onclick="startPractice()">🎤 開始練習</button>
+            <button class="btn btn-danger" onclick="logout()">登出</button>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="dashboard-grid">
+            <!-- 左側邊欄 -->
+            <div class="sidebar">
+                <div class="user-profile">
+                    <div class="profile-avatar">S</div>
+                    <div class="profile-name">singer01</div>
+                    <div class="profile-email">singer01@example.com</div>
+                </div>
+
+                <h3>練習統計</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value">45</div>
+                        <div class="stat-label">練習次數</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">82</div>
+                        <div class="stat-label">平均分數</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">12</div>
+                        <div class="stat-label">練習歌曲</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value">7</div>
+                        <div class="stat-label">連續天數</div>
+                    </div>
+                </div>
+
+                <h3>快速連結</h3>
+                <div style="display: flex; flex-direction: column; gap: 8px;">
+                    <button class="btn btn-primary btn-sm" onclick="startPractice()">🎤 開始練習</button>
+                    <button class="btn btn-secondary btn-sm" onclick="switchTab('history')">📊 練習記錄</button>
+                    <button class="btn btn-secondary btn-sm" onclick="switchTab('messages')">📧 訊息中心</button>
+                    <button class="btn btn-secondary btn-sm" onclick="switchTab('storage')">💾 儲存管理</button>
+                </div>
+            </div>
+
+            <!-- 主要內容區 -->
+            <div class="content-area">
+                <!-- 訊息中心 -->
+                <div class="card">
+                    <h3>
+                        📧 訊息中心
+                        <span style="font-size: 12px; color: #888; font-weight: normal;">2 則未讀</span>
+                    </h3>
+                    <div class="message-item message-unread">
+                        <div class="message-header">
+                            <span class="message-title">🎉 恭喜！您已達成連續練習 7 天</span>
+                            <span class="message-date">今天 09:00</span>
+                        </div>
+                        <div class="message-content">
+                            您已經連續練習 7 天了！繼續保持這個好習慣，您的歌唱技巧會越來越進步。管理員特別為您送上鼓勵！
+                        </div>
+                    </div>
+                    <div class="message-item message-unread">
+                        <div class="message-header">
+                            <span class="message-title">📢 新歌曲上架通知</span>
+                            <span class="message-date">昨天 15:30</span>
+                        </div>
+                        <div class="message-content">
+                            我們新增了 3 首熱門歌曲：「告白氣球」、「小幸運」、「月亮代表我的心」。快來試試看吧！
+                        </div>
+                    </div>
+                    <div class="message-item">
+                        <div class="message-header">
+                            <span class="message-title">💡 練習建議：注意音準</span>
+                            <span class="message-date">1月14日 10:00</span>
+                        </div>
+                        <div class="message-content">
+                            根據您最近的練習記錄，我們在「告白氣球」的副歌部分發現一些音準偏差。建議您多練習這個段落，可以參考我們的音準練習指南。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 練習記錄 -->
+                <div class="card">
+                    <h3>📊 練習記錄管理</h3>
+                    <div class="tabs">
+                        <button class="tab active" onclick="switchHistoryTab('all')">全部記錄</button>
+                        <button class="tab" onclick="switchHistoryTab('local')">僅本地</button>
+                        <button class="tab" onclick="switchHistoryTab('cloud')">僅雲端</button>
+                        <button class="tab" onclick="switchHistoryTab('synced')">已同步</button>
+                    </div>
+
+                    <!-- 圖例 -->
+                    <div class="legend">
+                        <div class="legend-item">
+                            <div class="legend-icon" style="background: #3498db;">💻</div>
+                            <span>本地版本</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-icon" style="background: #27ae60;">☁️</div>
+                            <span>雲端版本</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-icon" style="opacity: 0.4;">📌</div>
+                            <span>點擊標記為待同步</span>
+                        </div>
+                    </div>
+
+                    <!-- 儲存空間資訊 -->
+                    <div class="storage-panel">
+                        <div class="storage-title">
+                            <span>📱 本地儲存空間</span>
+                            <span id="storage-percent">45%</span>
+                        </div>
+                        <div class="storage-bar">
+                            <div class="storage-fill" id="storage-fill" style="width: 45%;"></div>
+                        </div>
+                        <div class="storage-info">
+                            <span>已使用 450 MB</span>
+                            <span>可用 550 MB</span>
+                        </div>
+                    </div>
+
+                    <!-- 平台通知 -->
+                    <div class="platform-notice" id="platform-notice" style="display: none;">
+                        <strong>📱 行動裝置檔案管理提醒</strong>
+                        <span id="platform-notice-text"></span>
+                    </div>
+
+                    <!-- 歷史記錄列表 -->
+                    <div id="history-list">
+                        <!-- 記錄 1: 本地 + 雲端 -->
+                        <div class="history-item" id="record-a1">
+                            <div class="history-header">
+                                <div class="history-score score-high">92</div>
+                                <div class="history-info">
+                                    <div class="history-song">月亮代表我的心 - Chorus</div>
+                                    <div class="history-detail">Lead Vocal · 42/45 音符匹配</div>
+                                </div>
+                                <div class="history-date">今天 14:32</div>
+                            </div>
+                            <div class="sync-status">
+                                <div class="sync-item local">
+                                    <span class="sync-icon">💻</span>
+                                    <span class="sync-label">本地版本</span>
+                                    <span class="sync-size">1.2 MB</span>
+                                    <button class="btn-icon" onclick="deleteLocal('a1')" title="刪除本地版本">🗑️</button>
+                                </div>
+                                <div class="sync-item cloud">
+                                    <span class="sync-icon">☁️</span>
+                                    <span class="sync-label">雲端版本</span>
+                                    <span class="sync-size">1.2 MB</span>
+                                    <button class="btn-icon" onclick="downloadCloud('a1')" title="下載雲端版本">⬇️</button>
+                                    <button class="btn-icon" onclick="deleteCloud('a1')" title="刪除雲端版本">🗑️</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 記錄 2: 僅本地 -->
+                        <div class="history-item" id="record-a2">
+                            <div class="history-header">
+                                <div class="history-score score-high">88</div>
+                                <div class="history-info">
+                                    <div class="history-song">月亮代表我的心 - Verse A</div>
+                                    <div class="history-detail">Lead Vocal · 38/40 音符匹配</div>
+                                </div>
+                                <div class="history-date">昨天 16:55</div>
+                            </div>
+                            <div class="sync-status">
+                                <div class="sync-item local">
+                                    <span class="sync-icon">💻</span>
+                                    <span class="sync-label">本地版本</span>
+                                    <span class="sync-size">980 KB</span>
+                                    <button class="btn-icon" onclick="deleteLocal('a2')" title="刪除本地版本">🗑️</button>
+                                </div>
+                                <div class="sync-item cloud unavailable" onclick="toggleCloud('a2')">
+                                    <span class="sync-icon">📌</span>
+                                    <span class="sync-label">點擊標記為待同步</span>
+                                    <div class="sync-tooltip">下次同步時會上傳至雲端備份</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 記錄 3: 僅雲端 -->
+                        <div class="history-item" id="record-a3">
+                            <div class="history-header">
+                                <div class="history-score score-mid">76</div>
+                                <div class="history-info">
+                                    <div class="history-song">小幸運 - 整首歌</div>
+                                    <div class="history-detail">Main Vocal · 98/120 音符匹配</div>
+                                </div>
+                                <div class="history-date">1月13日 10:20</div>
+                            </div>
+                            <div class="sync-status">
+                                <div class="sync-item local unavailable" onclick="toggleLocal('a3')">
+                                    <span class="sync-icon">📌</span>
+                                    <span class="sync-label">點擊標記為待同步</span>
+                                    <div class="sync-tooltip">下次同步時會從雲端下載</div>
+                                </div>
+                                <div class="sync-item cloud">
+                                    <span class="sync-icon">☁️</span>
+                                    <span class="sync-label">雲端版本</span>
+                                    <span class="sync-size">3.5 MB</span>
+                                    <button class="btn-icon" onclick="deleteCloud('a3')" title="刪除雲端版本">🗑️</button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 記錄 4: 本地 + 雲端 -->
+                        <div class="history-item" id="record-a4">
+                            <div class="history-header">
+                                <div class="history-score score-high">95</div>
+                                <div class="history-info">
+                                    <div class="history-song">告白氣球 - Chorus</div>
+                                    <div class="history-detail">Vocal · 48/50 音符匹配</div>
+                                </div>
+                                <div class="history-date">1月12日 14:00</div>
+                            </div>
+                            <div class="sync-status">
+                                <div class="sync-item local">
+                                    <span class="sync-icon">💻</span>
+                                    <span class="sync-label">本地版本</span>
+                                    <span class="sync-size">1.5 MB</span>
+                                    <button class="btn-icon" onclick="deleteLocal('a4')" title="刪除本地版本">🗑️</button>
+                                </div>
+                                <div class="sync-item cloud">
+                                    <span class="sync-icon">☁️</span>
+                                    <span class="sync-label">雲端版本</span>
+                                    <span class="sync-size">1.5 MB</span>
+                                    <button class="btn-icon" onclick="downloadCloud('a4')" title="下載雲端版本">⬇️</button>
+                                    <button class="btn-icon" onclick="deleteCloud('a4')" title="刪除雲端版本">🗑️</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 16px; display: flex; gap: 12px;">
+                        <button class="btn btn-secondary btn-sm" onclick="cleanupOldRecords()">🧹 清理舊記錄</button>
+                        <button class="btn btn-secondary btn-sm" onclick="syncAll()">🔄 同步所有記錄</button>
+                        <button class="btn btn-secondary btn-sm" onclick="exportAllData()">📦 匯出所有資料</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Assessment Detail Modal -->
+    <div class="modal-overlay" id="assessment-modal">
+        <div class="modal">
+            <h3>評分詳細資訊</h3>
+            <div id="assessment-detail-content">
+                <!-- Dynamic content -->
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeModal()">關閉</button>
+                <button class="btn btn-primary" onclick="downloadCurrentAssessment()">📥 下載</button>
+                <button class="btn btn-danger" onclick="deleteCurrentAssessment()">🗑️ 刪除</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentAssessmentId = null;
+        let storageUsed = 450; // MB
+        let storageTotal = 1000; // MB
+
+        // 記錄狀態管理
+        const recordStates = {
+            'a1': { local: true, cloud: true, localSize: '1.2 MB', cloudSize: '1.2 MB' },
+            'a2': { local: true, cloud: false, localSize: '980 KB', cloudSize: '980 KB' },
+            'a3': { local: false, cloud: true, localSize: '3.5 MB', cloudSize: '3.5 MB' },
+            'a4': { local: true, cloud: true, localSize: '1.5 MB', cloudSize: '1.5 MB' }
+        };
+
+        // 檢測平台
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+        const isAndroid = /Android/.test(navigator.userAgent);
+        const isMobile = isIOS || isAndroid;
+
+        // 顯示平台相關通知
+        if (isMobile) {
+            document.getElementById('platform-notice').style.display = 'block';
+            if (isIOS) {
+                document.getElementById('platform-notice-text').textContent = 
+                    'iOS 裝置限制：檔案將儲存在「檔案」App 的 Vocal Practice 資料夾中。建議定期同步至雲端以節省本地空間。';
+            } else if (isAndroid) {
+                document.getElementById('platform-notice-text').textContent = 
+                    'Android 裝置：檔案將儲存在「Downloads/VocalPractice」資料夾中。可使用「清理舊記錄」功能釋放空間。';
+            }
+        }
+
+        function startPractice() {
+            window.location.href = 'user-practice.html';
+        }
+
+        function switchTab(tabName) {
+            if (tabName === 'history') {
+                document.querySelector('.content-area').scrollIntoView({ behavior: 'smooth' });
+            } else if (tabName === 'messages') {
+                document.querySelector('.card').scrollIntoView({ behavior: 'smooth' });
+            } else if (tabName === 'storage') {
+                document.getElementById('storage-fill').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        function switchHistoryTab(filter) {
+            document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+            event.target.classList.add('active');
+            // 在實際應用中過濾列表
+            alert('篩選: ' + filter);
+        }
+
+        // 切換本地版本可用性
+        function toggleLocal(id) {
+            const state = recordStates[id];
+            if (!state.cloud) {
+                alert('雲端端無此記錄，無法標記為待同步');
+                return;
+            }
+            state.local = true;
+            updateRecordDisplay(id);
+            alert('已標記為待同步，下次同步時會從雲端下載');
+        }
+
+        // 切換雲端版本可用性
+        function toggleCloud(id) {
+            const state = recordStates[id];
+            if (!state.local) {
+                alert('本地端無此記錄，無法標記為待同步');
+                return;
+            }
+            state.cloud = true;
+            updateRecordDisplay(id);
+            alert('已標記為待同步，下次同步時會上傳至雲端');
+        }
+
+        // 檢查是否只剩唯一備份
+        function isLastBackup(state) {
+            return !state.cloud && !state.local;
+        }
+
+        // 刪除本地版本
+        function deleteLocal(id) {
+            const state = recordStates[id];
+            if (!state.local) return;
+
+            let msg = '確定要刪除本地版本嗎？\n\n這將釋放約 ' + state.localSize + ' 的儲存空間。';
+            if (isLastBackup({ cloud: state.cloud, local: false })) {
+                msg += '\n\n⚠️ 注意：這是該練習記錄的唯一備份，刪除後將無法復原。';
+            }
+
+            if (!confirm(msg)) {
+                return;
+            }
+
+            state.local = false;
+            const freedSpace = Math.floor(Math.random() * 3 + 1);
+            storageUsed = Math.max(0, storageUsed - freedSpace);
+            updateStorageDisplay();
+            updateRecordDisplay(id);
+            alert('已刪除本地版本，釋放了 ' + freedSpace + ' MB 空間');
+        }
+
+        // 下載雲端版本
+        function downloadCloud(id) {
+            const state = recordStates[id];
+            if (!state.cloud) return;
+
+            if (isIOS) {
+                alert('📱 iOS 裝置\n\n檔案將儲存到「檔案」App > Vocal Practice 資料夾中。');
+            } else if (isAndroid) {
+                alert('📱 Android 裝置\n\n檔案將儲存到「Downloads/VocalPractice」資料夾中。');
+            } else {
+                alert('已下載評分記錄');
+            }
+
+            // 如果本地版本不存在，下載後啟用
+            if (!state.local) {
+                state.local = true;
+                updateRecordDisplay(id);
+            }
+        }
+
+        // 刪除雲端版本
+        function deleteCloud(id) {
+            const state = recordStates[id];
+            if (!state.cloud) return;
+
+            let msg = '確定要刪除雲端版本嗎？';
+            if (isLastBackup({ cloud: false, local: state.local })) {
+                msg += '\n\n⚠️ 注意：這是該練習記錄的唯一備份，刪除後將無法復原。';
+            }
+
+            if (!confirm(msg)) {
+                return;
+            }
+
+            state.cloud = false;
+            updateRecordDisplay(id);
+            alert('已刪除雲端版本');
+        }
+
+        // 更新記錄顯示
+        function updateRecordDisplay(id) {
+            const state = recordStates[id];
+            const record = document.getElementById('record-' + id);
+            if (!record) return;
+
+            const localItem = record.querySelector('.sync-item.local');
+            const cloudItem = record.querySelector('.sync-item.cloud');
+
+            // 更新本地版本顯示
+            if (state.local) {
+                localItem.classList.remove('unavailable');
+                localItem.innerHTML = `
+                    <span class="sync-icon">💻</span>
+                    <span class="sync-label">本地版本</span>
+                    <span class="sync-size">${state.localSize}</span>
+                    <button class="btn-icon" onclick="deleteLocal('${id}')" title="刪除本地版本">🗑️</button>
+                `;
+            } else {
+                localItem.classList.add('unavailable');
+                localItem.innerHTML = `
+                    <span class="sync-icon">📌</span>
+                    <span class="sync-label">點擊標記為待同步</span>
+                    <div class="sync-tooltip">下次同步時會從雲端下載</div>
+                `;
+                localItem.onclick = () => toggleLocal(id);
+            }
+
+            // 更新雲端版本顯示
+            if (state.cloud) {
+                cloudItem.classList.remove('unavailable');
+                cloudItem.innerHTML = `
+                    <span class="sync-icon">☁️</span>
+                    <span class="sync-label">雲端版本</span>
+                    <span class="sync-size">${state.cloudSize}</span>
+                    <button class="btn-icon" onclick="downloadCloud('${id}')" title="下載雲端版本">⬇️</button>
+                    <button class="btn-icon" onclick="deleteCloud('${id}')" title="刪除雲端版本">🗑️</button>
+                `;
+            } else {
+                cloudItem.classList.add('unavailable');
+                cloudItem.innerHTML = `
+                    <span class="sync-icon">📌</span>
+                    <span class="sync-label">點擊標記為待同步</span>
+                    <div class="sync-tooltip">下次同步時會上傳至雲端備份</div>
+                `;
+                cloudItem.onclick = () => toggleCloud(id);
+            }
+        }
+
+        function viewAssessment(id) {
+            currentAssessmentId = id;
+            const modal = document.getElementById('assessment-modal');
+            const content = document.getElementById('assessment-detail-content');
+
+            const assessments = {
+                'a1': { score: 92, song: '月亮代表我的心', section: 'Chorus', track: 'Lead Vocal', matchedNotes: 42, totalNotes: 45, pitchDeviation: '+12 cents', durationDeviation: '+0.05s', date: '2024-01-15 14:32', size: '1.2 MB', synced: true },
+                'a2': { score: 88, song: '月亮代表我的心', section: 'Verse A', track: 'Lead Vocal', matchedNotes: 38, totalNotes: 40, pitchDeviation: '+5 cents', durationDeviation: '+0.02s', date: '2024-01-14 16:55', size: '980 KB', synced: false },
+                'a3': { score: 76, song: '小幸運', section: '全曲', track: 'Main Vocal', matchedNotes: 98, totalNotes: 120, pitchDeviation: '-8 cents', durationDeviation: '+0.12s', date: '2024-01-13 10:20', size: '3.5 MB', synced: false },
+                'a4': { score: 95, song: '告白氣球', section: 'Chorus', track: 'Vocal', matchedNotes: 48, totalNotes: 50, pitchDeviation: '+3 cents', durationDeviation: '+0.02s', date: '2024-01-12 14:00', size: '1.5 MB', synced: true }
+            };
+
+            const a = assessments[id] || assessments['a1'];
+            content.innerHTML = `
+                <div class="assessment-detail">
+                    <div class="assessment-detail-row"><span class="detail-label">評估 ID</span><span class="detail-value">${id}</span></div>
+                    <div class="assessment-detail-row"><span class="detail-label">歌曲</span><span class="detail-value">${a.song}</span></div>
+                    <div class="assessment-detail-row"><span class="detail-label">段落</span><span class="detail-value">${a.section}</span></div>
+                    <div class="assessment-detail-row"><span class="detail-label">聲部</span><span class="detail-value">${a.track}</span></div>
+                    <div class="assessment-detail-row"><span class="detail-label">分數</span><span class="detail-value" style="color: #27ae60; font-size: 24px;">${a.score}</span></div>
+                    <div class="assessment-detail-row"><span class="detail-label">音符匹配</span><span class="detail-value">${a.matchedNotes} / ${a.totalNotes}</span></div>
+                    <div class="assessment-detail-row"><span class="detail-label">平均音高偏差</span><span class="detail-value">${a.pitchDeviation}</span></div>
+                    <div class="assessment-detail-row"><span class="detail-label">平均時長偏差</span><span class="detail-value">${a.durationDeviation}</span></div>
+                    <div class="assessment-detail-row"><span class="detail-label">檔案大小</span><span class="detail-value">${a.size}</span></div>
+                    <div class="assessment-detail-row"><span class="detail-label">提交時間</span><span class="detail-value">${a.date}</span></div>
+                </div>
+            `;
+
+            modal.classList.add('visible');
+        }
+
+        function closeModal() {
+            document.getElementById('assessment-modal').classList.remove('visible');
+            currentAssessmentId = null;
+        }
+
+        function downloadAssessment(id) {
+            currentAssessmentId = id;
+            downloadCurrentAssessment();
+        }
+
+        function downloadCurrentAssessment() {
+            if (!currentAssessmentId) return;
+            alert('已下載評分記錄');
+        }
+
+        function deleteAssessment(id) {
+            if (!confirm('確定要刪除這筆評分記錄嗎？')) return;
+            alert('已刪除評分記錄');
+        }
+
+        function deleteCurrentAssessment() {
+            if (!currentAssessmentId) return;
+            deleteAssessment(currentAssessmentId);
+            closeModal();
+        }
+
+        function cleanupOldRecords() {
+            if (!confirm('確定要清理 30 天以上的練習記錄嗎？')) return;
+            const freedSpace = Math.floor(Math.random() * 50 + 20);
+            storageUsed = Math.max(0, storageUsed - freedSpace);
+            updateStorageDisplay();
+            alert('已清理舊記錄，釋放了 ' + freedSpace + ' MB 空間');
+        }
+
+        function syncAll() {
+            alert('正在同步所有記錄...\n\n同步完成！所有記錄已備份。');
+        }
+
+        function exportAllData() {
+            if (isMobile) {
+                alert('📱 行動裝置\n\n所有資料將匯出為 ZIP 檔案並儲存到：\n' +
+                    (isIOS ? '「檔案」App > Vocal Practice > Exports' : 'Downloads/VocalPractice/Exports'));
+            } else {
+                alert('已開始匯出所有資料為 ZIP 檔案');
+            }
+        }
+
+        function updateStorageDisplay() {
+            const percent = Math.round((storageUsed / storageTotal) * 100);
+            document.getElementById('storage-percent').textContent = percent + '%';
+            document.getElementById('storage-fill').style.width = percent + '%';
+
+            if (percent > 80) {
+                document.getElementById('storage-fill').classList.add('warning');
+            } else {
+                document.getElementById('storage-fill').classList.remove('warning');
+            }
+        }
+
+        function logout() {
+            window.location.href = '../index.html';
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('assessment-modal').addEventListener('click', function(e) {
+            if (e.target === this) closeModal();
+        });
+
+        // Initialize storage display
+        updateStorageDisplay();
+    </script>
+</body>
+</html>
