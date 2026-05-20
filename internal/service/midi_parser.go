@@ -60,7 +60,7 @@ func (p *MIDIParser) Parse(data []byte, title, artist string) (*domain.Song, err
 
 	// Build global tempo map (skip MThd header to read tracks)
 	r.Seek(14, io.SeekStart)
-	tempoMap := buildTempoMap(r, numTracks, ticksPerQuarter)
+	globalTempoMap := buildTempoMap(r, numTracks, ticksPerQuarter)
 
 	// Re-seek for track parsing
 	r.Seek(0, io.SeekStart)
@@ -71,16 +71,16 @@ func (p *MIDIParser) Parse(data []byte, title, artist string) (*domain.Song, err
 		return nil, ErrInvalidMIDI
 	}
 
-	var tempoUSecPerQN uint32 = 500000
 	var tracks []domain.MIDITrack
 
 	for trackIdx := uint16(0); trackIdx < numTracks; trackIdx++ {
-		track, err := readTrack(r, ticksPerQuarter, &tempoUSecPerQN)
+		track, err := readTrackWithGlobalTempo(r, ticksPerQuarter, globalTempoMap)
 		if err != nil {
 			continue
 		}
 		if track != nil && len(track.Notes) > 0 {
 			track.ID = uuid.New()
+			track.MIDIIndex = int(trackIdx)
 			nameLower := toLower(track.Name)
 			if contains(nameLower, "vocal") || contains(nameLower, "voice") || contains(nameLower, "lead") || contains(nameLower, "singer") {
 				track.IsVocal = true
@@ -95,7 +95,7 @@ func (p *MIDIParser) Parse(data []byte, title, artist string) (*domain.Song, err
 
 	song := domain.NewSong(title, artist, "", tracks)
 	song.TicksPerQuarter = ticksPerQuarter
-	for _, te := range tempoMap {
+	for _, te := range globalTempoMap {
 		song.TempoMap = append(song.TempoMap, domain.TempoMapEntry{
 			Tick:        te.Tick,
 			TimeSec:     te.TimeSec,
@@ -139,16 +139,10 @@ func (p *MIDIParser) ParseExtracted(data []byte) (*ParsedMIDIResult, error) {
 		return nil, ErrUnsupportedFormat
 	}
 
-	// Build the global tempo map from the first track (or any track with tempo events)
+	// Build the global tempo map from all tracks
 	globalTempoMap := buildTempoMap(r, numTracks, ticksPerQuarter)
 
 	// Reset reader and re-parse tracks with the shared global tempo map
-	r.Seek(0, io.SeekStart)
-	if _, err := io.ReadFull(r, header); err != nil {
-		return nil, ErrInvalidMIDI
-	}
-	// Skip header bytes already read — re-read full header from start
-	// Actually the header was read; we need to reset properly.
 	r.Seek(0, io.SeekStart)
 
 	return p.parseWithTempoMap(r, ticksPerQuarter, globalTempoMap)
@@ -166,16 +160,16 @@ func (p *MIDIParser) parseWithTempoMap(r *bytes.Reader, ticksPerQuarter int, glo
 
 	numTracks := binary.BigEndian.Uint16(header[10:12])
 
-	var tempoUSecPerQN uint32 = 500000
 	var tracks []domain.MIDITrack
 
 	for trackIdx := uint16(0); trackIdx < numTracks; trackIdx++ {
-		track, err := readTrack(r, int(ticksPerQuarter), &tempoUSecPerQN)
+		track, err := readTrackWithGlobalTempo(r, ticksPerQuarter, globalTempoMap)
 		if err != nil {
 			continue
 		}
 		if track != nil && len(track.Notes) > 0 {
 			track.ID = uuid.New()
+			track.MIDIIndex = int(trackIdx)
 			nameLower := toLower(track.Name)
 			if contains(nameLower, "vocal") || contains(nameLower, "voice") || contains(nameLower, "lead") || contains(nameLower, "singer") {
 				track.IsVocal = true
@@ -379,7 +373,42 @@ func SecToTick(timeSec float64, tempoMap []TempoEntry, ticksPerQuarter int) int 
 	return int(math.Round(tick))
 }
 
-func readTrack(r io.Reader, ticksPerQuarter int, tempo *uint32) (*domain.MIDITrack, error) {
+// TickToSec converts a tick position to seconds using the global tempo map.
+// It finds the appropriate tempo segment and interpolates within it.
+func TickToSec(tick int, tempoMap []TempoEntry, ticksPerQuarter int) float64 {
+	ppq := float64(ticksPerQuarter)
+	if ppq == 0 {
+		ppq = 480
+	}
+	if len(tempoMap) == 0 {
+		secPerTick := float64(500000) / (ppq * 1000000.0)
+		return float64(tick) * secPerTick
+	}
+
+	// Find the tempo segment containing this tick
+	i := sort.Search(len(tempoMap), func(i int) bool {
+		return tempoMap[i].Tick > tick
+	}) - 1
+
+	if i < 0 {
+		i = 0
+	}
+	if i >= len(tempoMap) {
+		i = len(tempoMap) - 1
+	}
+
+	entry := tempoMap[i]
+	secPerTick := float64(entry.TempoUSecQN) / (ppq * 1000000.0)
+	deltaTick := float64(tick - entry.Tick)
+	timeSec := entry.TimeSec + deltaTick*secPerTick
+	return math.Round(timeSec*100) / 100
+}
+
+// readTrackWithGlobalTempo reads a single MIDI track, tracking absolute ticks
+// and converting them to seconds using the global tempo map.
+// This ensures all tracks use consistent tempo timing regardless of which track
+// contains the tempo change events.
+func readTrackWithGlobalTempo(r io.Reader, ticksPerQuarter int, globalTempoMap []TempoEntry) (*domain.MIDITrack, error) {
 	trackHeader := make([]byte, 8)
 	if _, err := io.ReadFull(r, trackHeader); err != nil {
 		return nil, err
@@ -408,31 +437,25 @@ func readTrack(r io.Reader, ticksPerQuarter int, tempo *uint32) (*domain.MIDITra
 	}
 
 	pending := make(map[int]*pendingNote)
-	var absTimeSec float64
+	var absTick int
 	idx := 0
-	usPerQN := *tempo
 	hasNote := false
-
-	ppq := float64(ticksPerQuarter)
 
 	var runningStatus byte
 
 	for idx < len(trackData) {
 		delta, deltaLen := readVarLen(trackData[idx:])
 		idx += deltaLen
+		absTick += delta
 
-		// Convert delta ticks to seconds using the tempo in effect AT THIS EVENT
-		// and accumulate absolute time in seconds (same approach as mido).
-		deltaSec := tickToSec(float64(delta), usPerQN, ppq)
-		absTimeSec += deltaSec
+		// Convert absolute tick to seconds using the global tempo map.
+		absTimeSec := TickToSec(absTick, globalTempoMap, ticksPerQuarter)
 
 		if idx >= len(trackData) {
 			break
 		}
 
 		// Determine status byte.
-		// If the byte is >= 0x80, it's a real status byte (new or meta/sysex).
-		// Otherwise, it's running status: we reuse the last non-meta status.
 		var status byte
 		if trackData[idx] >= 0x80 {
 			status = trackData[idx]
@@ -440,7 +463,6 @@ func readTrack(r io.Reader, ticksPerQuarter int, tempo *uint32) (*domain.MIDITra
 		} else if runningStatus != 0 {
 			status = runningStatus
 		} else {
-			// No running status and byte < 0x80 — corrupt data; skip.
 			idx++
 			continue
 		}
@@ -464,11 +486,6 @@ func readTrack(r io.Reader, ticksPerQuarter int, tempo *uint32) (*domain.MIDITra
 			switch metaType {
 			case 0x03:
 				track.Name = string(metaData)
-			case 0x51:
-				if metaLen >= 3 {
-					usPerQN = uint32(metaData[0])<<16 | uint32(metaData[1])<<8 | uint32(metaData[2])
-					*tempo = usPerQN
-				}
 			}
 			continue
 		}
@@ -528,12 +545,14 @@ func readTrack(r io.Reader, ticksPerQuarter int, tempo *uint32) (*domain.MIDITra
 		}
 	}
 
+	// Handle pending (unclosed) notes
+	finalTimeSec := TickToSec(absTick, globalTempoMap, ticksPerQuarter)
 	for _, p := range pending {
 		note := domain.MIDINote{
 			Pitch:     p.pitch,
 			Velocity:  p.velocity,
 			StartTime: math.Round(p.start*100) / 100,
-			EndTime:   math.Round(absTimeSec*100) / 100,
+			EndTime:   math.Round(finalTimeSec*100) / 100,
 		}
 		if note.EndTime > note.StartTime {
 			track.Notes = append(track.Notes, note)

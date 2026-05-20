@@ -14,6 +14,7 @@ const (
 type SongStructure struct {
 	ID        uuid.UUID     `json:"id"`
 	SongID    uuid.UUID     `json:"song_id"`
+	TrackID   *uuid.UUID    `json:"track_id,omitempty"`
 	ParentID  *uuid.UUID    `json:"parent_id,omitempty"`
 	Type      StructureType `json:"type"`
 	Title     string        `json:"title"`
@@ -30,10 +31,11 @@ type StructureNode struct {
 	Lyrics  string          `json:"lyrics,omitempty"`
 }
 
-func NewSongStructure(songID uuid.UUID, parentID *uuid.UUID, structType StructureType, title string, startTime, endTime float64, startTick, endTick, orderIdx int) *SongStructure {
+func NewSongStructure(songID uuid.UUID, trackID *uuid.UUID, parentID *uuid.UUID, structType StructureType, title string, startTime, endTime float64, startTick, endTick, orderIdx int) *SongStructure {
 	return &SongStructure{
 		ID:        uuid.New(),
 		SongID:    songID,
+		TrackID:   trackID,
 		ParentID:  parentID,
 		Type:      structType,
 		Title:     title,

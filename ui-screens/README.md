@@ -15,12 +15,13 @@ ui-screens/
 ├── admin-structures.css       # 段落結構管理樣式
 ├── user-practice.html         # 使用者練習介面
 ├── user-dashboard.html        # 使用者儀表板
+├── import_js.txt              # JavaScript 匯入參考
+├── user-practice-html.txt     # 練習介面 HTML 暫存
 ├── sample-results/            # 評分結果範例模板
 │   ├── assessment-excellent.json        # 優秀評分 (90+ 分)
 │   ├── assessment-good.json             # 良好評分 (80-89 分)
 │   ├── assessment-average.json          # 普通評分 (70-79 分)
 │   └── assessment-needs-improvement.json # 需改進評分 (<70 分)
-├── temp.comp                  # 暫存比較檔案
 └── README.md                  # 本說明文件
 ```
 
@@ -150,17 +151,26 @@ cat ui-screens/sample-results/assessment-good.json | jq .
 - `PUT /api/v1/admin/users/{user_id}/toggle-active` - 啟用/停用使用者
 - `POST /api/v1/admin/songs` - 上傳 MIDI
 - `GET /api/v1/admin/songs` - 列出歌曲
+- `GET /api/v1/admin/songs/{song_id}` - 查詢單曲詳細資訊
 - `PATCH /api/v1/admin/songs/{song_id}/tracks/{track_id}` - 修改 Track 屬性 (is_vocal)
 - `DELETE /api/v1/admin/songs/{song_id}` - 刪除歌曲
 - `POST /api/v1/admin/songs/{song_id}/structures` - 建立段落結構
+- `POST /api/v1/admin/songs/{song_id}/structures/{section_id}/copy-phrases` - 複製段落 Phrase
+- `PUT /api/v1/admin/songs/{song_id}/structures/{structure_id}` - 修改段落結構
+- `DELETE /api/v1/admin/songs/{song_id}/structures/{structure_id}` - 刪除段落結構
 - `POST /api/v1/admin/songs/{song_id}/lyrics` - 批量管理歌詞
+- `GET /api/v1/admin/tracks/{track_id}/lyrics` - 查詢特定 Track 歌詞
+- `DELETE /api/v1/admin/songs/{song_id}/lyrics` - 刪除歌詞
 
 ### 使用者 API
 - `POST /api/v1/auth/login` - 登入
 - `GET /api/v1/songs` - 列出歌曲
+- `GET /api/v1/songs/{song_id}` - 取得單曲資訊
 - `GET /api/v1/songs/{song_id}/structures` - 取得段落結構（含歌詞）
+- `GET /api/v1/songs/{song_id}/tracks/{track_id}/audio` - 取得特定 Track 參考音訊
 - `POST /api/v1/assessments/submit` - 提交評分
 - `GET /api/v1/assessments` - 取得個人評分歷史
 - `GET /api/v1/assessments/stats` - 取得評分統計
+- `GET /api/v1/assessments/{assessment_id}` - 查詢特定評分結果
 - `GET /api/v1/assessments/{assessment_id}/download` - 下載評分結果
 - `DELETE /api/v1/assessments/{assessment_id}` - 刪除評分

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 
+	"vocal-practice-app/internal/domain"
 	"vocal-practice-app/internal/handler"
 	"vocal-practice-app/internal/service"
 	"vocal-practice-app/internal/storage"
@@ -16,17 +19,16 @@ import (
 )
 
 func main() {
-	port := ":8080"
-	uploadDir := os.Getenv("UPLOAD_DIR")
+	port := ":18080"
+	uploadDir := os.Getenv("TEST_UPLOAD_DIR")
 	if uploadDir == "" {
-		uploadDir = "./uploads"
+		uploadDir = "./uploads_test"
 	}
-	jwtSecret := os.Getenv("JWT_SECRET")
+	jwtSecret := os.Getenv("TEST_JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "vocal-practice-app-secret-key-change-in-production"
+		jwtSecret = "test-server-secret"
 	}
 
-	// Ensure upload directory exists
 	absUploadDir, err := filepath.Abs(uploadDir)
 	if err != nil {
 		log.Fatalf("failed to resolve upload directory: %v", err)
@@ -35,11 +37,11 @@ func main() {
 		log.Fatalf("failed to create upload directory: %v", err)
 	}
 
-	// Initialize dependencies
 	store := storage.New()
 	midiParser := service.NewMIDIParser()
 
-	// Initialize handlers
+	seedTestData(store, midiParser, absUploadDir)
+
 	authHandler := handler.NewAuthHandler(store, jwtSecret)
 	adminUsersHandler := handler.NewAdminUsersHandler(store)
 	adminSongsHandler := handler.NewAdminSongsHandler(store, midiParser, absUploadDir)
@@ -49,60 +51,46 @@ func main() {
 	userAssessmentsHandler := handler.NewUserAssessmentsHandler(store)
 	trackAudioHandler := handler.NewTrackAudioHandler(store)
 
-	// Router
 	r := chi.NewRouter()
-
-	// Global middleware
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(corsMiddleware)
 
-	// Health check
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`{"status":"ok"}`))
+		w.Write([]byte(`{"status":"ok","server":"test"}`))
 	})
 
-	// === Admin API (no auth required for simplicity in demo) ===
 	r.Route("/api/v1/admin", func(r chi.Router) {
-		// Users
 		r.Post("/users", adminUsersHandler.CreateUser)
 		r.Get("/users", adminUsersHandler.ListUsers)
 		r.Put("/users/{user_id}/toggle-active", adminUsersHandler.ToggleUserActive)
 
-		// Songs (MIDI upload)
 		r.Post("/songs", adminSongsHandler.UploadSong)
 		r.Get("/songs", adminSongsHandler.ListSongs)
 		r.Get("/songs/{song_id}", adminSongsHandler.GetSong)
 		r.Patch("/songs/{song_id}/tracks/{track_id}", adminSongsHandler.UpdateTrack)
 		r.Delete("/songs/{song_id}", adminSongsHandler.DeleteSong)
 
-		// Structures
 		r.Post("/songs/{song_id}/structures", adminStructuresHandler.BulkCreate)
-		r.Post("/songs/{song_id}/structures/{section_id}/copy-phrases", adminStructuresHandler.CopySectionPhrases)
 		r.Put("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Update)
 		r.Delete("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Delete)
 
-		// Lyrics
 		r.Post("/songs/{song_id}/lyrics", adminLyricsHandler.BatchUpsert)
 		r.Get("/tracks/{track_id}/lyrics", adminLyricsHandler.GetByTrack)
 		r.Delete("/songs/{song_id}/lyrics", adminLyricsHandler.Delete)
 	})
 
-	// === Auth API ===
 	r.Post("/api/v1/auth/login", authHandler.Login)
 
-	// === User API (protected) ===
 	r.Route("/api/v1", func(r chi.Router) {
-		// Public endpoints
 		r.Get("/songs", userSongsHandler.ListSongs)
 		r.Get("/songs/{song_id}", userSongsHandler.GetSong)
 		r.Get("/songs/{song_id}/midi", userSongsHandler.DownloadMIDI)
 		r.Get("/songs/{song_id}/structures", userSongsHandler.GetStructures)
 		r.Get("/songs/{song_id}/tracks/{track_id}/audio", trackAudioHandler.ServeTrackAudio)
 
-		// Protected endpoints
 		r.Group(func(r chi.Router) {
 			r.Use(authHandler.Middleware)
 			r.Post("/assessments/submit", userAssessmentsHandler.Submit)
@@ -114,14 +102,107 @@ func main() {
 		})
 	})
 
-	// Static file server for frontend
 	workDir, _ := os.Getwd()
 	filesDir := filepath.Join(workDir, ".")
 	r.Handle("/*", http.FileServer(http.Dir(filesDir)))
 
-	fmt.Printf("Vocal Practice App server starting on %s\n", port)
+	fmt.Printf("Test server starting on %s\n", port)
 	fmt.Printf("Upload directory: %s\n", absUploadDir)
 	log.Fatal(http.ListenAndServe(port, r))
+}
+
+func seedTestData(store *storage.Store, midiParser *service.MIDIParser, uploadDir string) {
+	user := domain.NewUser("webbchang", "webbchang@gmail.com", hashPassword("test1234"))
+	if err := store.CreateUser(user); err != nil {
+		log.Printf("[seed] create user skipped: %v", err)
+	} else {
+		log.Printf("[seed] user ready: %s / test1234", user.Email)
+	}
+
+	midiCandidates := []string{
+		"test_data/reference2.MID",
+		"test_data/reference2.mid",
+	}
+
+	for _, midiPath := range midiCandidates {
+		data, err := os.ReadFile(midiPath)
+		if err != nil {
+			continue
+		}
+
+		song, err := midiParser.Parse(data, "song1", "artist1")
+		if err != nil {
+			log.Printf("[seed] reference2 parse failed: %v", err)
+			return
+		}
+
+		filename := song.ID.String() + ".mid"
+		filePath := filepath.Join(uploadDir, filename)
+		if err := os.WriteFile(filePath, data, 0644); err != nil {
+			log.Printf("[seed] write midi failed: %v", err)
+			return
+		}
+
+		song.MIDIFilePath = filePath
+		if err := store.CreateSong(song); err != nil {
+			log.Printf("[seed] create song failed: %v", err)
+			return
+		}
+
+		log.Printf("[seed] song ready: %s - %s (%s)", song.Title, song.Artist, midiPath)
+
+		// Seed global structures visible to all tracks
+		tempoEntries := make([]service.TempoEntry, len(song.TempoMap))
+		for i, te := range song.TempoMap {
+			tempoEntries[i] = service.TempoEntry{
+				Tick:        te.Tick,
+				TimeSec:     te.TimeSec,
+				TempoUSecQN: te.TempoUSecQN,
+			}
+		}
+
+		ppq := song.TicksPerQuarter
+		if ppq == 0 {
+			ppq = 480
+		}
+
+		startTick := service.SecToTick(15, tempoEntries, ppq)
+		a1EndTick := service.SecToTick(29, tempoEntries, ppq)
+		endTick := service.SecToTick(50.6, tempoEntries, ppq)
+
+		section := domain.NewSongStructure(
+			song.ID, nil, nil,
+			domain.StructureTypeSECTION, "Verse A",
+			15, 50.6, startTick, endTick, 1,
+		)
+
+		phrase1 := domain.NewSongStructure(
+			song.ID, nil, &section.ID,
+			domain.StructureTypePHRASE, "A1",
+			15, 29, startTick, a1EndTick, 1,
+		)
+
+		phrase2 := domain.NewSongStructure(
+			song.ID, nil, &section.ID,
+			domain.StructureTypePHRASE, "A2",
+			29, 50.6, a1EndTick, endTick, 2,
+		)
+
+		if err := store.CreateStructure([]*domain.SongStructure{section, phrase1, phrase2}); err != nil {
+			log.Printf("[seed] create structures failed: %v", err)
+		} else {
+			log.Printf("[seed] global structures ready: Verse A with A1, A2")
+		}
+
+		return
+	}
+
+	log.Printf("[seed] reference2.MID not found, you can upload later via POST /api/v1/admin/songs")
+}
+
+func hashPassword(password string) string {
+	h := sha256.Sum256([]byte(password))
+	return base64.RawURLEncoding.EncodeToString(h[:])
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

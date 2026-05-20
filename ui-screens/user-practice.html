@@ -154,9 +154,14 @@
                 </select>
             </div>
 
-            <h3>練習聲部（單選）</h3>
+            <h3>練習主聲部（選取你的旋律）</h3>
             <div id="vocal-tracks">
                 <div class="loading-spinner">載入音軌中...</div>
+            </div>
+
+            <h3>伴奏聲部（可多選跟著唱）</h3>
+            <div id="accompaniment-tracks">
+                <div class="no-structures">請先選擇歌曲</div>
             </div>
 
             <h3>段落與句子</h3>
@@ -224,6 +229,8 @@
         </div>
     </div>
 
+    <script src="../assets/js/midiParser.js"></script>
+    <script src="../assets/js/songDataExtractor.js"></script>
     <script>
         const API_BASE = '/api/v1';
 
@@ -232,6 +239,7 @@
         let currentSongFull = null; // full song with tempo_map etc
         let structures = [];
         let selectedTrackId = null;
+        let selectedAccompanimentTrackIds = []; // multi-select accompaniment
         let selectedStructure = null; // { id, start, end, title }
         let midiData = null;
         let parsedNotes = null;       // all parsed notes from MIDI, each has .track index
@@ -252,170 +260,12 @@
         }
 
         function parseMIDINotes(midiArrayBuf) {
-            const data = new Uint8Array(midiArrayBuf);
-            const head = String.fromCharCode(data[0], data[1], data[2], data[3]);
-            if (head !== 'MThd') throw new Error('Not a MIDI file');
-            const format = (data[8] << 8) | data[9];
-            const numTracks = (data[10] << 8) | data[11];
-            const ticksPerQN = (data[12] << 8) | data[13];
-            let offset = 14;
-
-            function readVarLen(arr, pos) {
-                let value = 0, i = 0;
-                while (true) {
-                    value = (value << 7) | (arr[pos + i] & 0x7F);
-                    if (!(arr[pos + i] & 0x80)) break;
-                    i++;
-                }
-                return { value, size: i + 1 };
-            }
-
-            // --- Step 1: Build tempo map from all tracks ---
-            const rawTempos = [];
-            for (let t = 0; t < numTracks; t++) {
-                if (offset + 8 > data.length) break;
-                const chunkId = String.fromCharCode(data[offset], data[offset+1], data[offset+2], data[offset+3]);
-                if (chunkId !== 'MTrk') break;
-                const chunkLen = (data[offset+4] << 24) | (data[offset+5] << 16) | (data[offset+6] << 8) | data[offset+7];
-                offset += 8;
-                const end = offset + chunkLen;
-                let absTick = 0, runningStatus = 0;
-
-                while (offset < end) {
-                    const { value: delta, size: deltaSize } = readVarLen(data, offset);
-                    offset += deltaSize; absTick += delta;
-                    if (offset >= end) break;
-
-                    let status = data[offset];
-                    if (status >= 0x80) { runningStatus = status; offset++; }
-                    else if (runningStatus !== 0) { status = runningStatus; }
-                    else { offset++; continue; }
-
-                    if (status === 0xFF) {
-                        runningStatus = 0;
-                        if (offset >= end) break;
-                        const metaType = data[offset]; offset++;
-                        const { value: metaLen, size: metaLenSize } = readVarLen(data, offset);
-                        offset += metaLenSize;
-                        if (metaType === 0x51 && metaLen >= 3 && offset + metaLen <= end) {
-                            const usPerQN = (data[offset] << 16) | (data[offset+1] << 8) | data[offset+2];
-                            rawTempos.push({ tick: absTick, usPerQN });
-                        }
-                        offset += metaLen;
-                        continue;
-                    }
-                    if (status === 0xF0 || status === 0xF7) {
-                        runningStatus = 0;
-                        const { value: sysexLen, size: sysexLenSize } = readVarLen(data, offset);
-                        offset += sysexLenSize + sysexLen; continue;
-                    }
-
-                    const highNibble = status & 0xF0;
-                    switch (highNibble) {
-                        case 0x80: case 0x90: case 0xA0: case 0xB0: case 0xE0: offset += 2; break;
-                        case 0xC0: case 0xD0: offset += 1; break;
-                        default: break;
-                    }
-                }
-            }
-
-            // Sort and deduplicate tempo map
-            rawTempos.sort((a, b) => a.tick - b.tick);
-            const tempoMap = [];
-            for (const t of rawTempos) {
-                if (tempoMap.length === 0 || tempoMap[tempoMap.length - 1].tick !== t.tick) {
-                    tempoMap.push(t);
-                }
-            }
-
-            // --- Step 2: tickToSec helper using tempo map ---
-            function tickToSec(tick) {
-                // Find the tempo segment for this tick
-                let i = 0;
-                for (let j = tempoMap.length - 1; j >= 0; j--) {
-                    if (tempoMap[j].tick <= tick) { i = j; break; }
-                }
-                let timeSec = 0;
-                let prevTick = 0;
-                // Use initial tempo if map is empty, otherwise start with first entry
-                let prevTempo = tempoMap.length > 0 ? tempoMap[0].usPerQN : 500000;
-                for (let k = 1; k <= i; k++) {
-                    const dt = tempoMap[k].tick - prevTick;
-                    timeSec += dt * (prevTempo / (ticksPerQN * 1000000));
-                    prevTick = tempoMap[k].tick;
-                    prevTempo = tempoMap[k].usPerQN;
-                }
-                const dt = tick - prevTick;
-                timeSec += dt * (prevTempo / (ticksPerQN * 1000000));
-                return timeSec;
-            }
-
-            // --- Step 3: Parse notes (second pass over tracks) ---
-            offset = 14;
-            const allNotes = [];
-            for (let t = 0; t < numTracks; t++) {
-                if (offset + 8 > data.length) break;
-                const chunkId = String.fromCharCode(data[offset], data[offset+1], data[offset+2], data[offset+3]);
-                if (chunkId !== 'MTrk') break;
-                const chunkLen = (data[offset+4] << 24) | (data[offset+5] << 16) | (data[offset+6] << 8) | data[offset+7];
-                offset += 8;
-                const end = offset + chunkLen;
-                let absTick = 0, runningStatus = 0;
-
-                while (offset < end) {
-                    const { value: delta, size: deltaSize } = readVarLen(data, offset);
-                    offset += deltaSize; absTick += delta;
-                    if (offset >= end) break;
-
-                    let status = data[offset];
-                    if (status >= 0x80) { runningStatus = status; offset++; }
-                    else if (runningStatus !== 0) { status = runningStatus; }
-                    else { offset++; continue; }
-
-                    if (status === 0xFF) {
-                        runningStatus = 0; offset++;
-                        const { value: metaLen, size: metaLenSize } = readVarLen(data, offset);
-                        offset += metaLenSize + metaLen; continue;
-                    }
-                    if (status === 0xF0 || status === 0xF7) {
-                        runningStatus = 0;
-                        const { value: sysexLen, size: sysexLenSize } = readVarLen(data, offset);
-                        offset += sysexLenSize + sysexLen; continue;
-                    }
-
-                    const highNibble = status & 0xF0;
-                    if (highNibble === 0x90 || highNibble === 0x80) {
-                        const pitch = data[offset], velocity = data[offset+1]; offset += 2;
-                        if (highNibble === 0x90 && velocity > 0) {
-                            allNotes.push({ pitch, tick: absTick, track: t });
-                        } else {
-                            for (let i = allNotes.length - 1; i >= 0; i--) {
-                                if (allNotes[i].pitch === pitch && allNotes[i].endTick === undefined && allNotes[i].track === t) {
-                                    allNotes[i].endTick = absTick; break;
-                                }
-                            }
-                        }
-                        continue;
-                    }
-                    switch (highNibble) {
-                        case 0xA0: case 0xB0: case 0xE0: offset += 2; break;
-                        case 0xC0: case 0xD0: offset += 1; break;
-                        default: break;
-                    }
-                }
-            }
-
-            return allNotes.filter(n => n.endTick !== undefined && n.endTick > n.tick)
-                .map(n => ({
-                    pitch: n.pitch,
-                    start: tickToSec(n.tick),
-                    dur: tickToSec(n.endTick) - tickToSec(n.tick),
-                    track: n.track,
-                }))
-                .filter(n => n.dur > 0.02);
+            return window.MidiParser.parseMIDINotes(midiArrayBuf);
         }
 
-        function midiPitchToFreq(pitch) { return 440 * Math.pow(2, (pitch - 69) / 12); }
+        function midiPitchToFreq(pitch) {
+            return window.MidiParser.midiPitchToFreq(pitch);
+        }
 
         async function loadMIDI() {
             if (!currentSongId) return;
@@ -552,8 +402,9 @@
                 // Load MIDI for playback
                 await loadMIDI();
 
-                // Render tracks - show all tracks
-                renderTracks(song.tracks);
+                // Render vocal tracks (radio) and accompaniment tracks (checkbox)
+                renderVocalTracks(song.tracks);
+                renderAccompanimentTracks(song.tracks);
 
                 // Load structures for first track if available
                 if (song.tracks.length > 0) {
@@ -565,7 +416,7 @@
             }
         }
 
-        function renderTracks(tracks) {
+        function renderVocalTracks(tracks) {
             const container = document.getElementById('vocal-tracks');
             if (!tracks || tracks.length === 0) {
                 container.innerHTML = '<div class="no-structures">此歌曲沒有音軌</div>';
@@ -587,14 +438,50 @@
             container.innerHTML = html;
         }
 
+        function renderAccompanimentTracks(tracks) {
+            const container = document.getElementById('accompaniment-tracks');
+            if (!tracks || tracks.length === 0) {
+                container.innerHTML = '<div class="no-structures">此歌曲沒有音軌</div>';
+                return;
+            }
+
+            let html = '';
+            for (const t of tracks) {
+                const isChecked = selectedAccompanimentTrackIds.includes(t.id);
+                const badgeText = t.is_vocal ? '🎤 主旋律' : '🎵 伴奏';
+                // Exclude the currently selected vocal track from accompaniment options
+                const isDisabled = t.id === selectedTrackId;
+                html += `
+                    <div class="track-option ${isChecked ? 'selected' : ''}" onclick="${isDisabled ? '' : "toggleAccompanimentTrack('" + t.id + "')"}" style="${isDisabled ? 'opacity:0.5;cursor:not-allowed;' : ''}">
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} ${isDisabled ? 'disabled' : ''} style="margin-right:12px;">
+                        <span class="track-name">${t.name}</span>
+                        <span class="track-badge has-structure">${badgeText}</span>
+                    </div>
+                `;
+            }
+            container.innerHTML = html;
+        }
+
+        function toggleAccompanimentTrack(trackId) {
+            const idx = selectedAccompanimentTrackIds.indexOf(trackId);
+            if (idx === -1) {
+                selectedAccompanimentTrackIds.push(trackId);
+            } else {
+                selectedAccompanimentTrackIds.splice(idx, 1);
+            }
+            // Re-render
+            if (currentSongFull && currentSongFull.tracks) {
+                renderAccompanimentTracks(currentSongFull.tracks);
+            }
+        }
+
         function determineParsedTrackIndex() {
-            // parsedNotes uses MIDI track index (0..N-1).
-            // currentSongFull.tracks is in the same order as MIDI tracks.
-            // Find the index in currentSongFull.tracks that matches selectedTrackId.
+            // Use the MIDI track index stored in the backend's midi_index
+            // This matches the original MIDI track index used by parsedNotes
             if (!currentSongFull || !currentSongFull.tracks) return -1;
-            for (let i = 0; i < currentSongFull.tracks.length; i++) {
-                if (currentSongFull.tracks[i].id === selectedTrackId) {
-                    return i;
+            for (const t of currentSongFull.tracks) {
+                if (t.id === selectedTrackId) {
+                    return t.midi_index;
                 }
             }
             return -1;
@@ -608,15 +495,12 @@
             }
             const start = selectedStructure.start;
             const end = selectedStructure.end;
-            referenceNotes = parsedNotes.filter(n =>
-                n.track === parsedTrackIndex &&
-                n.start >= start - 0.05 && // small tolerance
-                n.start < end
-            ).map(n => ({
-                pitch: n.pitch,
-                start: n.start,
-                dur: Math.min(n.dur, end - n.start),
-            })).filter(n => n.dur > 0.02);
+            referenceNotes = window.SongDataExtractor.extractReferenceNotes(
+                parsedNotes,
+                parsedTrackIndex,
+                start,
+                end
+            );
             console.log(`Reference data: ${referenceNotes.length} notes from track ${parsedTrackIndex} [${start.toFixed(2)}-${end.toFixed(2)}]`);
         }
 
@@ -625,9 +509,10 @@
             referenceNotes = null;
             // Determine which MIDI track index corresponds to the selected UUID
             parsedTrackIndex = determineParsedTrackIndex();
-            // Re-render with selection
+            // Re-render both vocal and accompaniment track lists
             if (currentSongFull && currentSongFull.tracks) {
-                renderTracks(currentSongFull.tracks);
+                renderVocalTracks(currentSongFull.tracks);
+                renderAccompanimentTracks(currentSongFull.tracks);
             }
             await loadStructures(trackId);
         }

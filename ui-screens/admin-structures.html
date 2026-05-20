@@ -73,8 +73,10 @@
             <div class="structure-tree" id="structure-tree">
                 <div style="text-align: center; color: #999; padding: 20px;">請先選擇歌曲</div>
             </div>
-            <br>
-            <button class="btn btn-primary" onclick="showAddSection()">+ 新增段落</button>
+            <div style="margin-top: 12px; display: flex; gap: 8px;">
+                <button class="btn btn-primary" onclick="showAddSection()">+ 新增段落</button>
+                <button class="btn btn-secondary" onclick="showCopyFromTrackDialog()" id="copy-structures-btn" style="display:none;">📋 從其他聲部複製段落</button>
+            </div>
         </div>
 
         <!-- 編輯面板 -->
@@ -126,11 +128,14 @@
                         </select>
                     </div>
                 </div>
-                <div class="form-row">
+                <div class="form-row" id="edit-lyrics-row" style="display: none;">
                     <div class="form-group" style="flex: 1;">
                         <label>歌詞（每句用換行分隔）</label>
                         <textarea id="edit-lyrics" rows="4" placeholder="輸入每句歌詞，用 Enter 換行"></textarea>
                     </div>
+                </div>
+                <div id="section-lyrics-hint" style="display:none; margin-top: 8px; color:#666; font-size: 13px;">
+                    提示：SECTION 不儲存歌詞，請使用 PHRASE 編輯歌詞。
                 </div>
                 <div style="margin-top: 16px;">
                     <button class="btn btn-primary" onclick="saveEdit()">💾 儲存</button>
@@ -140,6 +145,7 @@
         </div>
     </div>
 
+    <script src="../assets/js/midiParser.js"></script>
     <script>
         const API_BASE = '/api/v1/admin';
         const USER_API_BASE = '/api/v1';
@@ -156,164 +162,12 @@
             return audioCtx;
         }
 
-        // Parse MIDI header + track chunk, extract note events with times
         function parseMIDINotes(midiArrayBuf) {
-            const data = new Uint8Array(midiArrayBuf);
-            let offset = 0;
-
-            // Read header
-            const head = String.fromCharCode(data[0], data[1], data[2], data[3]);
-            if (head !== 'MThd') throw new Error('Not a MIDI file');
-            const headerLen = (data[4] << 24) | (data[5] << 16) | (data[6] << 8) | data[7];
-            const format = (data[8] << 8) | data[9];
-            const numTracks = (data[10] << 8) | data[11];
-            const ticksPerQN = (data[12] << 8) | data[13];
-            offset = 14;
-
-            function readVarLen(arr, pos) {
-                let value = 0;
-                let i = 0;
-                while (true) {
-                    value = (value << 7) | (arr[pos + i] & 0x7F);
-                    if (!(arr[pos + i] & 0x80)) break;
-                    i++;
-                }
-                return { value, size: i + 1 };
-            }
-
-            // Build tempo map + collect notes in a single pass through all tracks
-            let tempoMap = [{ tick: 0, usPerQN: 500000 }];
-            const allNotes = [];
-
-            for (let t = 0; t < numTracks; t++) {
-                const chunkId = String.fromCharCode(data[offset], data[offset+1], data[offset+2], data[offset+3]);
-                if (chunkId !== 'MTrk') break;
-                const chunkLen = (data[offset+4] << 24) | (data[offset+5] << 16) | (data[offset+6] << 8) | data[offset+7];
-                offset += 8;
-                const end = offset + chunkLen;
-
-                let absTick = 0;
-                let runningStatus = 0;
-
-                while (offset < end) {
-                    const { value: delta, size: deltaSize } = readVarLen(data, offset);
-                    offset += deltaSize;
-                    absTick += delta;
-
-                    if (offset >= end) break;
-
-                    let status = data[offset];
-                    if (status >= 0x80) {
-                        runningStatus = status;
-                        offset++;
-                    } else if (runningStatus !== 0) {
-                        status = runningStatus;
-                    } else {
-                        offset++;
-                        continue;
-                    }
-
-                    if (status === 0xFF) {
-                        runningStatus = 0;
-                        const metaType = data[offset];
-                        offset++;
-                        const { value: metaLen, size: metaLenSize } = readVarLen(data, offset);
-                        offset += metaLenSize;
-                        if (metaType === 0x51 && metaLen >= 3) {
-                            const usPerQN = (data[offset] << 16) | (data[offset+1] << 8) | data[offset+2];
-                            tempoMap.push({ tick: absTick, usPerQN });
-                        }
-                        offset += metaLen;
-                        continue;
-                    }
-                    if (status === 0xF0 || status === 0xF7) {
-                        runningStatus = 0;
-                        const { value: sysexLen, size: sysexLenSize } = readVarLen(data, offset);
-                        offset += sysexLenSize + sysexLen;
-                        continue;
-                    }
-
-                    const highNibble = status & 0xF0;
-                    const channel = status & 0x0F;
-
-                    if (highNibble === 0x90 || highNibble === 0x80) {
-                        const pitch = data[offset];
-                        const velocity = data[offset + 1];
-                        offset += 2;
-
-                        if (highNibble === 0x90 && velocity > 0) {
-                            allNotes.push({ pitch, tick: absTick, channel, track: t });
-                        } else {
-                            // Note-off: find matching note-on and push complete note
-                            for (let i = allNotes.length - 1; i >= 0; i--) {
-                                if (allNotes[i].pitch === pitch && allNotes[i].endTick === undefined && allNotes[i].track === t) {
-                                    allNotes[i].endTick = absTick;
-                                    break;
-                                }
-                            }
-                        }
-                        continue;
-                    }
-
-                    // Skip other events
-                    switch (highNibble) {
-                        case 0xA0: case 0xB0: case 0xE0: offset += 2; break;
-                        case 0xC0: case 0xD0: offset += 1; break;
-                        default: break;
-                    }
-                }
-            }
-
-            // Sort and deduplicate tempo map
-            tempoMap.sort((a, b) => a.tick - b.tick);
-            const deduped = [];
-            for (const t of tempoMap) {
-                if (deduped.length === 0 || deduped[deduped.length-1].tick !== t.tick) {
-                    deduped.push(t);
-                }
-            }
-            tempoMap = deduped;
-
-            // Helper: convert tick to seconds using the tempo map
-            // Each map entry means: "at this tick, tempo becomes usPerQN"
-            function tickToSec(tick, map, ppq) {
-                let i = 0;
-                for (let j = map.length - 1; j >= 0; j--) {
-                    if (map[j].tick <= tick) { i = j; break; }
-                }
-                let timeSec = 0;
-                let prevTick = 0;
-                // Always start with the tempo at tick 0
-                let prevTempo = map[0].usPerQN;
-                for (let k = 1; k <= i; k++) {
-                    const dt = map[k].tick - prevTick;
-                    timeSec += dt * (prevTempo / (ppq * 1000000));
-                    prevTick = map[k].tick;
-                    prevTempo = map[k].usPerQN;
-                }
-                const dt = tick - prevTick;
-                timeSec += dt * (prevTempo / (ppq * 1000000));
-                return timeSec;
-            }
-
-            return allNotes
-                .filter(n => n.endTick !== undefined && n.endTick > n.tick)
-                .map(n => {
-                    const start = tickToSec(n.tick, tempoMap, ticksPerQN);
-                    const end = tickToSec(n.endTick, tempoMap, ticksPerQN);
-                    return {
-                        pitch: n.pitch,
-                        start: start,
-                        end: end,
-                        dur: end - start,
-                        channel: n.channel,
-                    };
-                })
-                .filter(n => n.dur > 0.02); // filter too-short notes
+            return window.MidiParser.parseMIDINotes(midiArrayBuf);
         }
 
         function midiPitchToFreq(pitch) {
-            return 440 * Math.pow(2, (pitch - 69) / 12);
+            return window.MidiParser.midiPitchToFreq(pitch);
         }
 
         let currentMidiData = null;
@@ -617,6 +471,113 @@
             }
         }
 
+        // --- Copy structures from another track ---
+        async function showCopyFromTrackDialog() {
+            const trackId = document.getElementById('lyrics-track-select').value;
+            if (!trackId || !currentSongId) return;
+
+            try {
+                const song = await api('/songs/' + currentSongId);
+                // Find other tracks that might have structures
+                const otherTracks = song.tracks.filter(t => t.id !== trackId);
+                if (otherTracks.length === 0) {
+                    alert('沒有其他聲部可以複製');
+                    return;
+                }
+
+                let html = '<div style="position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;" onclick="if(event.target===this)this.remove()">';
+                html += '<div style="background:#16213e;border-radius:12px;padding:24px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;">';
+                html += '<h3 style="margin-bottom:16px;">📋 從其他聲部複製段落結構</h3>';
+                html += '<p style="color:#888;margin-bottom:16px;">注意：只複製段落框架，不含歌詞內容</p>';
+                html += '<div style="display:flex;flex-direction:column;gap:8px;">';
+                
+                for (const t of otherTracks) {
+                    // Check if this track has any sections in current structures
+                    // We need to load structures for this track separately
+                    html += `<button class="btn btn-primary" style="text-align:left;padding:12px;" onclick="copyStructuresFromTrack('${t.id}', '${escapeHtml(t.name)}')">📥 從「${escapeHtml(t.name)}」複製</button>`;
+                }
+                
+                html += '</div>';
+                html += '<button class="btn btn-secondary" style="margin-top:16px;" onclick="this.closest(\'[style*=\\\'position:fixed\\\']\').remove()">取消</button>';
+                html += '</div></div>';
+                
+                const div = document.createElement('div');
+                div.innerHTML = html;
+                document.body.appendChild(div.firstElementChild);
+            } catch (err) {
+                alert('無法載入聲部資訊：' + err.message);
+            }
+        }
+
+        async function copyStructuresFromTrack(sourceTrackId, sourceTrackName) {
+            const targetTrackId = document.getElementById('lyrics-track-select').value;
+            if (!targetTrackId || !currentSongId) return;
+
+            // Close dialog
+            document.querySelector('[style*="position:fixed"]')?.remove();
+
+            if (!confirm(`確定要從「${sourceTrackName}」複製段落結構到目前聲部？`)) return;
+
+            try {
+                // Get source structures
+                const sourceData = await api('/songs/' + currentSongId + '/structures?track_id=' + encodeURIComponent(sourceTrackId));
+                const sourceStructs = sourceData.structures || [];
+                
+                if (sourceStructs.length === 0) {
+                    alert('來源聲部沒有段落結構');
+                    return;
+                }
+
+                // Build payload: copy sections and phrases, but assign to target track
+                const payload = { structures: [] };
+                for (const section of sourceStructs) {
+                    const sectionPayload = {
+                        type: 'SECTION',
+                        title: section.title,
+                        start_time: section.start_time,
+                        end_time: section.end_time,
+                        start_tick: section.start_tick || 0,
+                        end_tick: section.end_tick || 0,
+                        order_index: section.order_index || 0,
+                        track_id: targetTrackId,
+                        phrases: []
+                    };
+
+                    if (section.phrases) {
+                        for (const phrase of section.phrases) {
+                            sectionPayload.phrases.push({
+                                type: 'PHRASE',
+                                title: phrase.title,
+                                start_time: phrase.start_time,
+                                end_time: phrase.end_time,
+                                start_tick: phrase.start_tick || 0,
+                                end_tick: phrase.end_tick || 0,
+                                order_index: phrase.order_index || 0,
+                                track_id: targetTrackId
+                            });
+                        }
+                    }
+
+                    payload.structures.push(sectionPayload);
+                }
+
+                // Also copy global (track_id=null) structures that are in the tree
+                // If sourceStructs were just global, we need to also include them
+                // Actually, if source track has no specific structures, it might be using global ones
+                // Let's check: if sourceData.structures exist, they are already filtered
+
+                await api('/admin/songs/' + currentSongId + '/structures', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                });
+
+                await loadStructures();
+                alert('✅ 段落結構已複製完成');
+            } catch (err) {
+                alert('複製失敗：' + err.message);
+            }
+        }
+
         // --- Render timeline ---
         function renderTimeline() {
             const timeline = document.getElementById('timeline');
@@ -670,9 +631,20 @@
         // --- Render tree with play buttons ---
         function renderTree() {
             const container = document.getElementById('structure-tree');
+            const copyBtn = document.getElementById('copy-structures-btn');
+            const trackId = document.getElementById('lyrics-track-select').value;
+            
             if (structures.length === 0) {
-                container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">尚無段落結構，請點擊「+ 新增段落」建立</div>';
+                container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">尚無段落結構</div>';
+                // Show copy button if a track is selected
+                if (copyBtn) {
+                    copyBtn.style.display = trackId ? 'inline-block' : 'none';
+                }
                 return;
+            }
+            
+            if (copyBtn) {
+                copyBtn.style.display = 'none';
             }
 
             let html = '';
@@ -740,6 +712,14 @@
         }
 
         // --- Edit / Add structure ---
+        function updateLyricsEditorVisibility(type) {
+            const isPhrase = (type || '').toUpperCase() === 'PHRASE';
+            const lyricsRow = document.getElementById('edit-lyrics-row');
+            const sectionHint = document.getElementById('section-lyrics-hint');
+            if (lyricsRow) lyricsRow.style.display = isPhrase ? 'flex' : 'none';
+            if (sectionHint) sectionHint.style.display = isPhrase ? 'none' : 'block';
+        }
+
         async function editStructure(id, type) {
             let node = null;
             for (const s of structures) {
@@ -787,6 +767,7 @@
             const isPhrase = (type === 'PHRASE' || node.type === 'PHRASE');
             parentSelect.style.display = isPhrase ? 'block' : 'none';
             parentSelect.closest('.form-group').style.display = isPhrase ? 'block' : 'none';
+            updateLyricsEditorVisibility(isPhrase ? 'PHRASE' : 'SECTION');
 
             panel.style.display = 'block';
             panel.scrollIntoView({ behavior: 'smooth' });
@@ -823,6 +804,7 @@
             }
             parentSelect.style.display = 'none';
             parentSelect.closest('.form-group').style.display = 'none';
+            updateLyricsEditorVisibility('SECTION');
 
             panel.style.display = 'block';
             panel.scrollIntoView({ behavior: 'smooth' });
@@ -838,6 +820,7 @@
                 parentSelect.style.display = 'none';
                 parentGroup.style.display = 'none';
             }
+            updateLyricsEditorVisibility(this.value);
         });
 
         async function saveEdit() {
@@ -849,9 +832,24 @@
             const endTick = parseInt(document.getElementById('edit-end-tick').value) || 0;
             const orderIdx = parseInt(document.getElementById('edit-order').value) || 0;
             const parentId = document.getElementById('edit-parent').value;
+            const editLyrics = document.getElementById('edit-lyrics').value.trim();
+            const trackId = document.getElementById('lyrics-track-select').value;
 
             if (!title) { alert('請輸入標題'); return; }
             if (endTime <= startTime) { alert('結束時間必須大於開始時間'); return; }
+
+            let parentSection = null;
+            if (type === 'PHRASE') {
+                if (!parentId) { alert('PHRASE 必須選擇父段落'); return; }
+                parentSection = structures.find(s => s.id === parentId);
+                if (!parentSection) { alert('找不到父段落'); return; }
+                const parentStartTick = parseInt(parentSection.start_tick || 0);
+                const parentEndTick = parseInt(parentSection.end_tick || 0);
+                if (!(startTick >= parentStartTick && endTick <= parentEndTick)) {
+                    alert('PHRASE 的起訖 tick 必須落在父段落範圍內');
+                    return;
+                }
+            }
 
             try {
                 if (editingIsNew) {
@@ -863,17 +861,20 @@
                             title: title,
                             start_time: startTime,
                             end_time: endTime,
+                            start_tick: startTick,
+                            end_tick: endTick,
                             order_index: orderIdx,
                             phrases: [],
                         });
                     } else if (type === 'PHRASE' && parentId) {
-                        const parentSection = structures.find(s => s.id === parentId);
                         if (parentSection) {
                             const existingPhrases = (parentSection.phrases || []).map(p => ({
                                 type: p.type,
                                 title: p.title,
                                 start_time: p.start_time,
                                 end_time: p.end_time,
+                                start_tick: p.start_tick || 0,
+                                end_tick: p.end_tick || 0,
                                 order_index: p.order_index,
                             }));
                             payload.structures.push({
@@ -881,6 +882,8 @@
                                 title: parentSection.title,
                                 start_time: parentSection.start_time,
                                 end_time: parentSection.end_time,
+                                start_tick: parentSection.start_tick || 0,
+                                end_tick: parentSection.end_tick || 0,
                                 order_index: parentSection.order_index,
                                 phrases: [
                                     ...existingPhrases,
@@ -889,6 +892,8 @@
                                         title: title,
                                         start_time: startTime,
                                         end_time: endTime,
+                                        start_tick: startTick,
+                                        end_tick: endTick,
                                         order_index: orderIdx,
                                     },
                                 ],
@@ -902,12 +907,16 @@
                                 title: title,
                                 start_time: startTime,
                                 end_time: endTime,
+                                start_tick: startTick,
+                                end_tick: endTick,
                                 order_index: orderIdx,
                                 phrases: [{
                                     type: 'PHRASE',
                                     title: title,
                                     start_time: startTime,
                                     end_time: endTime,
+                                    start_tick: startTick,
+                                    end_tick: endTick,
                                     order_index: 1,
                                 }],
                             });
@@ -918,6 +927,8 @@
                             title: title,
                             start_time: startTime,
                             end_time: endTime,
+                            start_tick: startTick,
+                            end_tick: endTick,
                             order_index: orderIdx,
                             phrases: [],
                         });
@@ -927,17 +938,61 @@
                         method: 'POST',
                         body: JSON.stringify(payload),
                     });
+
+                    // New phrase lyrics are not included in tree input; save immediately after create
+                    if (type === 'PHRASE' && editLyrics && trackId) {
+                        await loadStructures();
+                        const updatedParent = structures.find(s => s.id === parentId);
+                        if (updatedParent && updatedParent.phrases) {
+                            const matched = updatedParent.phrases.find(p =>
+                                p.title === title &&
+                                Number(p.start_time) === Number(startTime) &&
+                                Number(p.end_time) === Number(endTime)
+                            );
+                            if (matched) {
+                                await api('/admin/songs/' + currentSongId + '/lyrics', {
+                                    method: 'POST',
+                                    body: JSON.stringify({
+                                        lyrics: [{
+                                            track_id: trackId,
+                                            structure_id: matched.id,
+                                            lyrics: editLyrics,
+                                        }],
+                                    }),
+                                });
+                            }
+                        }
+                    }
                 } else {
                     const payload = {};
                     if (editingNode.title !== title) payload.title = title;
                     if (editingNode.start_time !== startTime) payload.start_time = startTime;
                     if (editingNode.end_time !== endTime) payload.end_time = endTime;
+                    if ((editingNode.start_tick || 0) !== startTick) payload.start_tick = startTick;
+                    if ((editingNode.end_tick || 0) !== endTick) payload.end_tick = endTick;
                     if (editingNode.order_index !== orderIdx) payload.order_index = orderIdx;
+                    if ((editingNode.type || '').toUpperCase() !== type) payload.type = type;
+                    const oldParentId = editingNode.parent_id || '';
+                    if (oldParentId !== parentId) payload.parent_id = parentId;
 
                     if (Object.keys(payload).length > 0) {
                         await api('/admin/songs/' + currentSongId + '/structures/' + editingNode.id, {
                             method: 'PUT',
                             body: JSON.stringify(payload),
+                        });
+                    }
+
+                    // Save edited phrase lyric immediately
+                    if (type === 'PHRASE' && editLyrics && trackId) {
+                        await api('/admin/songs/' + currentSongId + '/lyrics', {
+                            method: 'POST',
+                            body: JSON.stringify({
+                                lyrics: [{
+                                    track_id: trackId,
+                                    structure_id: editingNode.id,
+                                    lyrics: editLyrics,
+                                }],
+                            }),
                         });
                     }
                 }

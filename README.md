@@ -18,8 +18,12 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 ├── cmd/
 │   ├── server/                  # Go 伺服器入口
 │   │   └── main.go
+│   ├── test_server/             # 測試用伺服器
+│   │   └── main.go
 │   ├── midi_inspect/            # MIDI 解析檢查工具
 │   │   └── main.go
+│   ├── midi_ref_test/           # MIDI 參考測試 (Node.js)
+│   │   └── ref_filter.cjs
 │   ├── midi_vs_wav_report/      # MIDI vs WAV 比對報告工具 (生成 HTML)
 │   │   └── main.go
 │   └── snapshot/                # 專案快照生成工具
@@ -36,7 +40,7 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 │   │   ├── common.go            # respondJSON / respondError 共用工具
 │   │   ├── admin_users.go       # Admin 使用者 CRUD (含 toggle-active)
 │   │   ├── admin_songs.go       # Admin MIDI 上傳/管理 (含 delete)
-│   │   ├── admin_structures.go  # Admin 段落結構管理
+│   │   ├── admin_structures.go  # Admin 段落結構管理 (含 copy-phrases)
 │   │   ├── admin_lyrics.go      # Admin 歌詞批量管理
 │   │   ├── songs.go             # User 歌曲查詢/MIDI 下載/結構樹
 │   │   └── assessments.go       # User 評分提交、歷史、統計、下載、刪除
@@ -44,16 +48,22 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 │   │   ├── midi_parser.go       # MIDI 檔案解析（多 Track、Note 萃取、Tempo Map）
 │   │   ├── midi_parser_test.go
 │   │   ├── assessment_test.go
-│   │   └── assessment_unit_test.go
+│   │   ├── assessment_unit_test.go
+│   │   └── ref_filter_test.go
 │   └── storage/                 # 資料持久層
 │       ├── memory.go
 │       └── memory_test.go
+├── assets/
+│   └── js/
+│       ├── midiParser.js        # Client-side MIDI 解析器
+│       └── songDataExtractor.js # 歌曲資料萃取
 ├── index.html / style.css / script.js  # 前台使用者頁面（練習、分析、歷史）
 ├── ui-screens/                  # UI 介面靜態模板
 │   ├── admin-*.html / admin-*.css     # 管理者後台頁面與樣式
 │   ├── user-practice.html       # 使用者練習介面
 │   ├── user-dashboard.html      # 使用者儀表板
 │   └── sample-results/          # 評分結果範例 JSON
+├── uploads_test/                # MIDI 測試檔案
 ├── snapshot/                    # 專案快照
 │   ├── progress.md              # 進度追蹤文件
 │   └── snapshot.html            # 自動生成的專案快照
@@ -150,6 +160,12 @@ Parameters:
 GET /api/v1/admin/songs
 ```
 
+#### 查詢單曲詳細資訊（含 Track 列表）
+
+```
+GET /api/v1/admin/songs/{song_id}
+```
+
 #### 修改 Track 屬性（is_vocal 標記）
 
 ```
@@ -160,12 +176,6 @@ Content-Type: application/json
 ```
 
 Admin 可在上傳 MIDI 後手動調整各 Track 的 `is_vocal` 標記，覆蓋自動偵測結果。
-
-#### 查詢單曲詳細資訊（含 Track 列表）
-
-```
-GET /api/v1/admin/songs/{song_id}
-```
 
 #### 刪除歌曲
 
@@ -200,6 +210,27 @@ Content-Type: application/json
   ]
 }
 ```
+
+#### 複製段落結構中的 Phrase
+
+```
+POST /api/v1/admin/songs/{song_id}/structures/{section_id}/copy-phrases
+Content-Type: application/json
+
+{
+  "phrases": [
+    {
+      "type": "PHRASE",
+      "title": "Copied Line 1",
+      "start_time": 60.0,
+      "end_time": 75.0,
+      "order_index": 2
+    }
+  ]
+}
+```
+
+將指定 Phrase 資料複製到目標段落結構中。
 
 #### 修改段落結構
 

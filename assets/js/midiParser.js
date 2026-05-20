@@ -1,4 +1,4 @@
-export function parseMIDINotes(midiArrayBuf) {
+function parseMIDINotes(midiArrayBuf) {
     const data = new Uint8Array(midiArrayBuf);
     let offset = 0;
 
@@ -165,6 +165,11 @@ export function parseMIDINotes(midiArrayBuf) {
         .filter(n => n.dur > 0.02);
 }
 
-export function midiPitchToFreq(pitch) {
+function midiPitchToFreq(pitch) {
     return 440 * Math.pow(2, (pitch - 69) / 12);
 }
+
+window.MidiParser = {
+    parseMIDINotes,
+    midiPitchToFreq,
+};

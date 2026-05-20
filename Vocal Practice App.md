@@ -6,7 +6,7 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 
 ## 技術架構
 
-- **版本**: 0.1
+- **版本**: 0.11
 - **語言**: Go (後端), HTML/CSS/JavaScript (前端)
 - **架構模式**: 領域驅動設計 (DDD)
 - **認證方式**: JWT Token
@@ -193,6 +193,25 @@ Stores assessment results submitted by users after practicing. Each record is as
           "order_index": 1
         }
       ]
+    }
+  ]
+}
+```
+
+### POST /api/v1/admin/songs/{song_id}/structures/{section_id}/copy-phrases
+
+* Action: Copies phrase data from one section to another.
+* Payload:
+
+```json
+{
+  "phrases": [
+    {
+      "type": "PHRASE",
+      "title": "Copied Line 1",
+      "start_time": 60.0,
+      "end_time": 75.0,
+      "order_index": 2
     }
   ]
 }

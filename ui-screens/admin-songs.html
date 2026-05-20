@@ -262,7 +262,7 @@
                             <strong style="color:#888;font-size:13px;">聲部 (${song.tracks.length})</strong>
                             <div style="margin-top:8px;">${trackHtml}</div>
                         </div>
-                        <button class="btn btn-secondary" onclick="this.closest('div[style]').remove()">關閉</button>
+                        <button class="btn btn-secondary" onclick="this.parentElement.parentElement.remove()">關閉</button>
                     </div>
                 `;
                 document.body.appendChild(modal);

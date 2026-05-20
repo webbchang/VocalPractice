@@ -2,6 +2,7 @@ package storage
 
 import (
 	"errors"
+	"sort"
 	"sync"
 	"time"
 
@@ -225,6 +226,30 @@ func (s *Store) ListStructuresBySong(songID uuid.UUID) ([]*domain.SongStructure,
 	return result, nil
 }
 
+func (s *Store) ListStructuresBySongAndTrack(songID uuid.UUID, trackID *uuid.UUID) ([]*domain.SongStructure, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]*domain.SongStructure, 0)
+	for _, st := range s.structures {
+		if st.SongID != songID {
+			continue
+		}
+		// If trackID is nil, return global structures (track_id == nil)
+		// If trackID is set, return structures for that track AND global structures
+		if trackID == nil {
+			if st.TrackID == nil {
+				result = append(result, st)
+			}
+		} else {
+			if st.TrackID == nil || *st.TrackID == *trackID {
+				result = append(result, st)
+			}
+		}
+	}
+	return result, nil
+}
+
 func (s *Store) BuildStructureTree(songID uuid.UUID) ([]*domain.StructureNode, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -242,6 +267,103 @@ func (s *Store) BuildStructureTree(songID uuid.UUID) ([]*domain.StructureNode, e
 		} else {
 			children[*st.ParentID] = append(children[*st.ParentID], st)
 		}
+	}
+
+	sortStructures := func(items []*domain.SongStructure) {
+		sort.Slice(items, func(i, j int) bool {
+			a := items[i]
+			b := items[j]
+			if a.StartTick != b.StartTick {
+				return a.StartTick < b.StartTick
+			}
+			if a.StartTime != b.StartTime {
+				return a.StartTime < b.StartTime
+			}
+			if a.OrderIdx != b.OrderIdx {
+				return a.OrderIdx < b.OrderIdx
+			}
+			return a.ID.String() < b.ID.String()
+		})
+	}
+
+	sortStructures(roots)
+	for parentID := range children {
+		sortStructures(children[parentID])
+	}
+
+	var build func(parent uuid.UUID) []domain.StructureNode
+	build = func(parent uuid.UUID) []domain.StructureNode {
+		var nodes []domain.StructureNode
+		for _, st := range children[parent] {
+			node := domain.StructureNode{
+				SongStructure: *st,
+				Phrases:       build(st.ID),
+			}
+			nodes = append(nodes, node)
+		}
+		return nodes
+	}
+
+	result := make([]*domain.StructureNode, 0, len(roots))
+	for _, root := range roots {
+		node := &domain.StructureNode{
+			SongStructure: *root,
+			Phrases:       build(root.ID),
+		}
+		result = append(result, node)
+	}
+	return result, nil
+}
+
+func (s *Store) BuildStructureTreeForTrack(songID uuid.UUID, trackID *uuid.UUID) ([]*domain.StructureNode, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	// group by parent
+	children := make(map[uuid.UUID][]*domain.SongStructure)
+	var roots []*domain.SongStructure
+
+	for _, st := range s.structures {
+		if st.SongID != songID {
+			continue
+		}
+		// Filter by track: global (trackID == nil) OR matches the requested track
+		if trackID != nil {
+			if st.TrackID != nil && *st.TrackID != *trackID {
+				continue
+			}
+		} else {
+			if st.TrackID != nil {
+				continue
+			}
+		}
+		if st.ParentID == nil {
+			roots = append(roots, st)
+		} else {
+			children[*st.ParentID] = append(children[*st.ParentID], st)
+		}
+	}
+
+	sortStructures := func(items []*domain.SongStructure) {
+		sort.Slice(items, func(i, j int) bool {
+			a := items[i]
+			b := items[j]
+			if a.StartTick != b.StartTick {
+				return a.StartTick < b.StartTick
+			}
+			if a.StartTime != b.StartTime {
+				return a.StartTime < b.StartTime
+			}
+			if a.OrderIdx != b.OrderIdx {
+				return a.OrderIdx < b.OrderIdx
+			}
+			return a.ID.String() < b.ID.String()
+		})
+	}
+
+	sortStructures(roots)
+	for parentID := range children {
+		sortStructures(children[parentID])
 	}
 
 	var build func(parent uuid.UUID) []domain.StructureNode

@@ -108,8 +108,8 @@ func TestStructureCRUD(t *testing.T) {
 	s := New()
 	songID := uuid.New()
 
-	section := domain.NewSongStructure(songID, nil, domain.StructureTypeSECTION, "Verse", 0, 30, 0, 480, 1)
-	phrase := domain.NewSongStructure(songID, &section.ID, domain.StructureTypePHRASE, "Line 1", 0, 15, 0, 240, 1)
+	section := domain.NewSongStructure(songID, nil, nil, domain.StructureTypeSECTION, "Verse", 0, 30, 0, 480, 1)
+	phrase := domain.NewSongStructure(songID, nil, &section.ID, domain.StructureTypePHRASE, "Line 1", 0, 15, 0, 240, 1)
 
 	if err := s.CreateStructure([]*domain.SongStructure{section, phrase}); err != nil {
 		t.Fatalf("CreateStructure failed: %v", err)
@@ -217,7 +217,7 @@ func TestTrackLyricsCRUD(t *testing.T) {
 	// List by song
 	songID := uuid.New()
 	s.CreateStructure([]*domain.SongStructure{
-		domain.NewSongStructure(songID, nil, domain.StructureTypeSECTION, "Verse", 0, 30, 0, 480, 1),
+		domain.NewSongStructure(songID, nil, nil, domain.StructureTypeSECTION, "Verse", 0, 30, 0, 480, 1),
 	})
 	// lyrics was stored with structID which is not tied to songID, so song list should be empty
 	songLyrics, err := s.ListTrackLyricsBySong(songID)
@@ -240,6 +240,37 @@ func TestTrackLyricsCRUD(t *testing.T) {
 	// Delete non-existent
 	if err := s.DeleteTrackLyrics(uuid.New(), uuid.New()); err != nil {
 		t.Errorf("expected nil for deleting non-existent lyrics, got %v", err)
+	}
+}
+
+func TestBuildStructureTreePhraseSortedByTime(t *testing.T) {
+	s := New()
+	songID := uuid.New()
+	section := domain.NewSongStructure(songID, nil, nil, domain.StructureTypeSECTION, "Verse", 0, 30, 0, 480, 1)
+
+	late := domain.NewSongStructure(songID, nil, &section.ID, domain.StructureTypePHRASE, "Late", 20, 25, 320, 380, 3)
+	early := domain.NewSongStructure(songID, nil, &section.ID, domain.StructureTypePHRASE, "Early", 5, 10, 80, 140, 2)
+	middle := domain.NewSongStructure(songID, nil, &section.ID, domain.StructureTypePHRASE, "Middle", 12, 18, 200, 280, 1)
+
+	// 故意以非時間順序建立，驗證 BuildStructureTree 會改成時間排序
+	if err := s.CreateStructure([]*domain.SongStructure{section, late, early, middle}); err != nil {
+		t.Fatalf("CreateStructure failed: %v", err)
+	}
+
+	tree, err := s.BuildStructureTree(songID)
+	if err != nil {
+		t.Fatalf("BuildStructureTree failed: %v", err)
+	}
+	if len(tree) != 1 || len(tree[0].Phrases) != 3 {
+		t.Fatalf("unexpected tree shape: roots=%d phrases=%d", len(tree), len(tree[0].Phrases))
+	}
+
+	got := []string{tree[0].Phrases[0].Title, tree[0].Phrases[1].Title, tree[0].Phrases[2].Title}
+	want := []string{"Early", "Middle", "Late"}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("phrase order mismatch at %d: got=%v want=%v", i, got, want)
+		}
 	}
 }
 

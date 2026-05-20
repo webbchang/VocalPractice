@@ -77,21 +77,23 @@ func (h *UserSongsHandler) GetSong(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type trackInfo struct {
-		ID      uuid.UUID `json:"id"`
-		Name    string    `json:"name"`
-		IsVocal bool      `json:"is_vocal"`
-		Channel int       `json:"channel"`
-		Notes   int       `json:"note_count"`
+		ID        uuid.UUID `json:"id"`
+		Name      string    `json:"name"`
+		IsVocal   bool      `json:"is_vocal"`
+		Channel   int       `json:"channel"`
+		Notes     int       `json:"note_count"`
+		MIDIIndex int       `json:"midi_index"`
 	}
 
 	tracks := make([]trackInfo, 0, len(song.Tracks))
 	for _, t := range song.Tracks {
 		tracks = append(tracks, trackInfo{
-			ID:      t.ID,
-			Name:    t.Name,
-			IsVocal: t.IsVocal,
-			Channel: t.Channel,
-			Notes:   len(t.Notes),
+			ID:        t.ID,
+			Name:      t.Name,
+			IsVocal:   t.IsVocal,
+			Channel:   t.Channel,
+			Notes:     len(t.Notes),
+			MIDIIndex: t.MIDIIndex,
 		})
 	}
 
@@ -144,7 +146,21 @@ func (h *UserSongsHandler) GetStructures(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	tree, err := h.store.BuildStructureTree(songID)
+	// If track_id is provided, build tree filtered by track
+	var trackID *uuid.UUID
+	trackIDStr := r.URL.Query().Get("track_id")
+	if trackIDStr != "" {
+		if tid, err := uuid.Parse(trackIDStr); err == nil {
+			trackID = &tid
+		}
+	}
+
+	var tree []*domain.StructureNode
+	if trackID != nil {
+		tree, err = h.store.BuildStructureTreeForTrack(songID, trackID)
+	} else {
+		tree, err = h.store.BuildStructureTree(songID)
+	}
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to build structure tree")
 		return
@@ -155,19 +171,15 @@ func (h *UserSongsHandler) GetStructures(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Load lyrics if track_id query param is provided
-	trackIDStr := r.URL.Query().Get("track_id")
-	if trackIDStr != "" {
-		trackID, err := uuid.Parse(trackIDStr)
+	if trackID != nil {
+		lyricsMap := make(map[uuid.UUID]string)
+		lyrics, err := h.store.ListTrackLyricsByTrack(*trackID)
 		if err == nil {
-			lyricsMap := make(map[uuid.UUID]string)
-			lyrics, err := h.store.ListTrackLyricsByTrack(trackID)
-			if err == nil {
-				for _, l := range lyrics {
-					lyricsMap[l.StructureID] = l.Lyrics
-				}
-				// Inject lyrics into tree
-				injectLyrics(tree, lyricsMap)
+			for _, l := range lyrics {
+				lyricsMap[l.StructureID] = l.Lyrics
 			}
+			// Inject lyrics into tree
+			injectLyrics(tree, lyricsMap)
 		}
 	}
 

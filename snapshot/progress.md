@@ -159,3 +159,34 @@ exp := strconv.FormatInt(time.Now().Add(24*time.Hour).Unix(), 10)
 - go build 編譯成功無錯誤
 - 新增 `cmd/midi_ref_test/` 目錄：包含 ref_filter.cjs（Node.js client-side MIDI 解析器，支援 stdin / HTTP 雙模式）
 - 新增 `internal/service/ref_filter_test.go`：8 項 JS-bridge 自動化測試（驗證 client-side reference data 生成的時間範圍正確性）
+
+- [2026-05-19 23:45:28] 完成前端 MIDI 單一來源重構：
+  - assets/js/midiParser.js 作為單一 MIDI parser（window.MidiParser）
+  - assets/js/songDataExtractor.js 作為 reference extractor（window.SongDataExtractor）
+  - ui-screens/user-practice.html、ui-screens/admin-structures.html 移除重複解析邏輯並改為共用模組
+  - script.js 已建立時間戳備份
+
+- [2026-05-20 00:26:19] 新增獨立測試伺服器 `cmd/test_server/main.go`（不影響正式 `cmd/server/main.go`）：
+  - 預設啟動於 `:18080`
+  - 內建 seed 使用者：`webbchang@gmail.com / test1234`
+  - 啟動時自動嘗試載入 `test_data/reference2.MID`（或 `reference2.mid`）
+  - 成功時建立預設歌曲：`song1 / artist1`
+  - 驗證結果：
+    - `GET /health` => `{"status":"ok","server":"test"}`
+    - `POST /api/v1/auth/login` 可成功取得 token
+    - `GET /api/v1/songs` 回傳 `song1 / artist1`
+
+- [2026-05-20 01:12:59] admin-structures UI 修正（方案 1，最小改動）：
+  - `ui-screens/admin-structures.html`：lyrics 編輯欄改為僅 `PHRASE` 顯示
+  - 新增 `updateLyricsEditorVisibility(type)` 統一控制顯示行為
+  - 編輯/新增/切換類型時同步套用規則：`SECTION` 隱藏 lyrics、顯示提示文字
+  - 提示文案：`SECTION 不儲存歌詞，請使用 PHRASE 編輯歌詞。`
+
+- [2026-05-20 01:35:56] admin-structures 後端新增「複製 section phrases + 時間排序」：
+  - 新增 API：`POST /api/v1/admin/songs/{song_id}/structures/{section_id}/copy-phrases`
+  - 可將來源 section 下所有 phrase 複製到目標 section，並複製對應 track lyrics
+  - `internal/storage/memory.go`：`BuildStructureTree` 新增穩定排序（`StartTick` -> `StartTime` -> `OrderIdx` -> `ID`）
+  - 測試新增：
+    - `internal/handler/admin_structures_test.go`：`TestCopySectionPhrasesSuccess`
+    - `internal/storage/memory_test.go`：`TestBuildStructureTreePhraseSortedByTime`
+  - 驗證：`go test ./internal/storage ./internal/handler` 全部通過

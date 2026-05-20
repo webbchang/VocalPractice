@@ -20,6 +20,7 @@ type MIDITrack struct {
 	Channel    int        `json:"channel"`
 	Notes      []MIDINote `json:"notes"`
 	IsVocal    bool       `json:"is_vocal"`
+	MIDIIndex  int        `json:"midi_index"`
 }
 
 type TempoMapEntry struct {
