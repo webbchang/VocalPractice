@@ -1,3 +1,5 @@
+import { login, logout } from './auth.js';
+
 // === State ===
 const API_BASE = '/api/v1';
 let state = {
@@ -56,40 +58,6 @@ function showScreen(id) {
     document.getElementById(id).classList.remove('hidden');
 }
 
-// === Login ===
-async function login() {
-    const email = document.getElementById('login-email').value;
-    const password = document.getElementById('login-password').value;
-    const errorEl = document.getElementById('login-error');
-
-    if (!email || !password) {
-        errorEl.textContent = '請輸入 Email 和密碼';
-        return;
-    }
-
-    try {
-        const result = await api('/auth/login', {
-            method: 'POST',
-            body: JSON.stringify({ email, password })
-        });
-        state.token = result.token;
-        state.user = result.user;
-        errorEl.textContent = '';
-        await loadSongs();
-    } catch (err) {
-        errorEl.textContent = '登入失敗: ' + err.message;
-    }
-}
-
-function logout() {
-    stopAccompaniment();
-    state.token = null;
-    state.user = null;
-    state.selectedSong = null;
-    document.getElementById('login-email').value = '';
-    document.getElementById('login-password').value = '';
-    showScreen('login-screen');
-}
 
 // === Songs ===
 async function loadSongs() {
@@ -1738,3 +1706,10 @@ function escapeHtml(str) {
 
 // === Initial State ===
 showScreen('login-screen');
+document.getElementById('login-btn').addEventListener('click', () => {
+    login(state, api, loadSongs);
+});
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+    logout(state, stopAccompaniment, showScreen);
+});
