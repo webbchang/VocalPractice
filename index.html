@@ -5,212 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vocal Practice App</title>
     <link rel="stylesheet" href="style.css">
-    <style>
-        /* Structure tree styles */
-        .structure-node {
-            margin-bottom: 2px;
-        }
-        .structure-option {
-            display: flex;
-            align-items: center;
-            padding: 8px 12px;
-            background: #1a1a2e;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border: 2px solid transparent;
-            margin-bottom: 2px;
-        }
-        .structure-option:hover {
-            background: #1e2a4a;
-        }
-        .structure-option.selected {
-            border-color: #3498db;
-            background: #1e2a4a;
-        }
-        .structure-option.in-range {
-            border-color: #27ae60;
-            background: #1a3a2e;
-        }
-        .structure-icon {
-            margin-right: 8px;
-            font-size: 14px;
-        }
-        .structure-name {
-            flex: 1;
-            font-size: 14px;
-        }
-        .structure-badge {
-            font-size: 11px;
-            background: #2c3e50;
-            color: #888;
-            padding: 2px 6px;
-            border-radius: 4px;
-            margin-right: 8px;
-        }
-        .structure-time {
-            font-size: 12px;
-            color: #666;
-        }
-        /* Range actions */
-        .range-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 8px;
-        }
-        .range-info {
-            font-size: 13px;
-            padding: 8px 0;
-        }
-        /* Headset status */
-        .headset-status {
-            font-size: 13px;
-            padding: 8px 12px;
-            border-radius: 6px;
-            margin-bottom: 12px;
-        }
-        .headset-status.wired { background: #1a3a2e; color: #27ae60; border: 1px solid #27ae60; }
-        .headset-status.bluetooth { background: #3a2e1a; color: #f39c12; border: 1px solid #f39c12; }
-        .headset-status.none { background: #3a1a1a; color: #e74c3c; border: 1px solid #e74c3c; }
-        .headset-status.unknown { background: #1a2a3a; color: #3498db; border: 1px solid #3498db; }
-        /* Headset banner in practice */
-        .headset-banner {
-            display: none;
-            font-size: 13px;
-            padding: 10px 16px;
-            border-radius: 8px;
-            margin-bottom: 12px;
-            text-align: center;
-        }
-        .headset-banner.wired { background: #1a3a2e; color: #27ae60; border: 1px solid #27ae60; }
-        .headset-banner.bluetooth { background: #3a2e1a; color: #f39c12; border: 1px solid #f39c12; }
-        .headset-banner.none { background: #3a1a1a; color: #e74c3c; border: 1px solid #e74c3c; }
-        .headset-banner.unknown { background: #1a2a3a; color: #3498db; border: 1px solid #3498db; }
-        /* Count down */
-        .count-down {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            font-size: 72px;
-            font-weight: 700;
-            color: #3498db;
-            text-shadow: 0 0 30px rgba(52, 152, 219, 0.5);
-            z-index: 100;
-            pointer-events: none;
-        }
-        /* Accompaniment progress */
-        .accompaniment-progress-container {
-            display: none;
-            margin-top: 12px;
-            background: #1a1a2e;
-            border-radius: 6px;
-            padding: 8px;
-        }
-        .accompaniment-progress-bar {
-            height: 6px;
-            background: #2c3e50;
-            border-radius: 3px;
-            overflow: hidden;
-        }
-        .accompaniment-progress-fill {
-            height: 100%;
-            width: 0%;
-            background: linear-gradient(90deg, #3498db, #2ecc71);
-            border-radius: 3px;
-            transition: width 0.1s linear;
-        }
-        .accompaniment-info {
-            font-size: 12px;
-            color: #888;
-            margin-top: 4px;
-        }
-        .practice-range-info {
-            display: none;
-            font-size: 14px;
-            padding: 8px 12px;
-            background: #1a1a2e;
-            border-radius: 6px;
-            margin-bottom: 12px;
-            color: #27ae60;
-        }
-        /* Lyrics display */
-        .lyrics-container {
-            background: #16213e;
-            border-radius: 8px;
-            padding: 16px;
-            margin: 12px 0;
-            max-height: 200px;
-            overflow-y: auto;
-        }
-        .lyrics-line {
-            padding: 8px 12px;
-            margin: 4px 0;
-            border-radius: 6px;
-            font-size: 18px;
-            color: #555;
-            transition: all 0.2s;
-            border-left: 3px solid transparent;
-        }
-        .lyrics-line.active {
-            color: #fff;
-            background: #1e3a5f;
-            border-left-color: #3498db;
-            font-size: 22px;
-            font-weight: 600;
-        }
-        .lyrics-line.passed {
-            color: #666;
-        }
-        /* Button sizes */
-        .btn-small {
-            padding: 6px 12px;
-            font-size: 13px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .btn-primary {
-            background: #3498db;
-            color: white;
-        }
-        .btn-primary:hover {
-            background: #2980b9;
-        }
-        .btn-secondary {
-            background: #2c3e50;
-            color: #ccc;
-        }
-        .btn-secondary:hover {
-            background: #34495e;
-        }
-        .btn-success {
-            background: #27ae60;
-            color: white;
-        }
-        .btn-success:hover {
-            background: #219653;
-        }
-        /* Track item for structure list */
-        .track-item {
-            display: flex;
-            align-items: center;
-            padding: 8px 12px;
-            background: #1a1a2e;
-            border-radius: 6px;
-            margin-bottom: 4px;
-        }
-        .track-item label {
-            margin-left: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            flex: 1;
-        }
-    </style>
 </head>
 <body>
     <div id="app">
-        <!-- Login Screen -->
         <div id="login-screen" class="screen">
             <div class="card">
                 <h1>Vocal Practice App</h1>
@@ -221,110 +18,26 @@
                 <p id="login-error" class="error"></p>
             </div>
         </div>
-
-        <!-- Song Selection Screen -->
-        <div id="songs-screen" class="screen hidden">
-            <div class="header">
-                <h1>選擇歌曲</h1>
-                <button id="logout-btn" class="btn-small">登出</button>
-            </div>
-            <div id="song-list" class="list"></div>
-        </div>
-
-        <!-- Track Selection Screen -->
-        <div id="tracks-screen" class="screen hidden">
-            <button class="btn-small back" data-action="goBackToSongs">← 返回</button>
-            <h1 id="track-song-title">選擇聲部</h1>
-
-            <!-- Headset status -->
-            <div id="headset-status" class="headset-status">檢查音訊裝置中...</div>
-
-            <div class="section">
-                <h2>練習聲部（評估基準）</h2>
-                <div id="vocal-tracks" class="list"></div>
-            </div>
-
-            <div class="section">
-                <h2>伴奏聲部（跟著唱）</h2>
-                <div id="accompaniment-tracks" class="list"></div>
-            </div>
-
-            <div class="section">
-                <h2>選擇段落與句子</h2>
-                <div id="structure-selection">
-                    <div id="structure-list"></div>
-                    <div id="range-info" class="range-info"></div>
-                    <div id="range-actions" class="range-actions"></div>
-                </div>
-            </div>
-
-            <button id="start-practice-btn" disabled>開始練習</button>
-        </div>
-
-        <!-- Practice Screen -->
-        <div id="practice-screen" class="screen hidden" style="position: relative;">
-            <button class="btn-small back" data-action="goBackToTracks">← 返回</button>
-            <h1>錄音練習</h1>
-
-            <!-- Headset banner -->
-            <div id="headset-banner" class="headset-banner"></div>
-
-            <!-- Practice range info -->
-            <div id="practice-range-info" class="practice-range-info"></div>
-
-            <!-- Accompaniment info -->
-            <div id="accompaniment-info" class="accompaniment-info" style="display:none;"></div>
-
-            <!-- Count down overlay -->
-            <div id="count-down" class="count-down hidden"></div>
-
-            <div class="practice-controls">
-                <div id="recording-status">準備錄音</div>
-                <button id="record-btn">開始錄音</button>
-            </div>
-
-            <!-- Lyrics display -->
-            <div id="lyrics-container" class="lyrics-container" style="display:none;">
-                <div style="font-size:12px; color:#888; margin-bottom:8px;">📝 歌詞</div>
-                <div id="lyrics-lines"></div>
-            </div>
-
-            <!-- Accompaniment progress -->
-            <div id="accompaniment-progress-container" class="accompaniment-progress-container">
-                <div class="accompaniment-progress-bar">
-                    <div id="accompaniment-progress" class="accompaniment-progress-fill"></div>
-                </div>
-                <div class="accompaniment-info">伴奏播放進度</div>
-            </div>
-
-            <div class="section">
-                <h2>分析結果</h2>
-                <div id="analysis-status">請先錄音</div>
-                <div id="score-display" class="hidden">
-                    <div class="score-circle" id="score-circle">
-                        <span id="score-value">0</span>
-                    </div>
-                </div>
-            </div>
-
-            <div id="visualizations" class="hidden">
-                <div class="chart-container">
-                    <h3>音高曲線疊加圖</h3>
-                    <canvas id="pitch-contour" width="600" height="200"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h3>逐音符偏差條狀圖</h3>
-                    <canvas id="deviation-chart" width="600" height="200"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h3>段落分數儀表板</h3>
-                    <div id="segment-scores"></div>
-                </div>
-                <button id="submit-btn" class="hidden">上傳評分結果</button>
-            </div>
-        </div>
     </div>
 
-    <script type="module" src="js/main.js"></script>
+    <script type="module">
+        import { login } from './auth.js';
+
+        document.getElementById('login-btn').addEventListener('click', async () => {
+            await login();
+        });
+
+        // Allow Enter key to submit
+        document.getElementById('login-password').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('login-btn').click();
+            }
+        });
+        document.getElementById('login-email').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('login-btn').click();
+            }
+        });
+    </script>
 </body>
 </html>

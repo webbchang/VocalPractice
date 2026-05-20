@@ -39,6 +39,7 @@ type userResponse struct {
 	ID       uuid.UUID `json:"id"`
 	Username string    `json:"username"`
 	Email    string    `json:"email"`
+	Role     string    `json:"role"`
 	IsActive bool      `json:"is_active"`
 }
 
@@ -79,6 +80,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			ID:       user.ID,
 			Username: user.Username,
 			Email:    user.Email,
+			Role:     user.Role,
 			IsActive: user.IsActive,
 		},
 	})

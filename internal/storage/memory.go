@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"sort"
 	"sync"
@@ -28,7 +30,7 @@ type Store struct {
 }
 
 func New() *Store {
-	return &Store{
+	s := &Store{
 		users:        make(map[uuid.UUID]*domain.User),
 		usersByEmail: make(map[string]*domain.User),
 		songs:        make(map[uuid.UUID]*domain.Song),
@@ -36,6 +38,42 @@ func New() *Store {
 		assessments:  make(map[uuid.UUID]*domain.UserAssessment),
 		trackLyrics:  make(map[string]*domain.TrackLyrics),
 	}
+	s.seedUsers()
+	return s
+}
+
+// seedUsers creates default users for development/demo.
+func (s *Store) seedUsers() {
+	// Admin user: admin / admin@vocalpractice.app / admin1234
+	admin := &domain.User{
+		ID:           uuid.MustParse("00000000-0000-0000-0000-000000000001"),
+		Username:     "admin",
+		Email:        "admin@vocalpractice.app",
+		PasswordHash: hashPwd("admin1234"),
+		Role:         "admin",
+		IsActive:     true,
+		CreatedAt:    time.Now(),
+	}
+	s.users[admin.ID] = admin
+	s.usersByEmail[admin.Email] = admin
+
+	// Demo user: testuser / test@example.com / password123
+	demo := &domain.User{
+		ID:           uuid.MustParse("00000000-0000-0000-0000-000000000002"),
+		Username:     "testuser",
+		Email:        "test@example.com",
+		PasswordHash: hashPwd("password123"),
+		Role:         "user",
+		IsActive:     true,
+		CreatedAt:    time.Now(),
+	}
+	s.users[demo.ID] = demo
+	s.usersByEmail[demo.Email] = demo
+}
+
+func hashPwd(password string) string {
+	h := sha256.Sum256([]byte(password))
+	return base64.RawURLEncoding.EncodeToString(h[:])
 }
 
 // --- User ---

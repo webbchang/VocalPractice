@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>管理者儀表板 - Vocal Practice</title>
+    <link rel="stylesheet" href="admin-common.css">
+    <style>
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 24px;
+            margin-top: 24px;
+        }
+        .dashboard-card {
+            background: white;
+            border-radius: 12px;
+            padding: 32px 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            text-align: center;
+            transition: transform 0.2s, box-shadow 0.2s;
+            cursor: pointer;
+            text-decoration: none;
+            display: block;
+            color: inherit;
+        }
+        .dashboard-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        }
+        .dashboard-card .icon {
+            font-size: 48px;
+            margin-bottom: 16px;
+        }
+        .dashboard-card h3 {
+            font-size: 18px;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        .dashboard-card p {
+            font-size: 14px;
+            color: #7f8c8d;
+            line-height: 1.5;
+        }
+        .dashboard-card .btn {
+            margin-top: 16px;
+        }
+        .admin-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .admin-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: #3498db;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="sidebar">
+        <h2>🎤 Vocal Practice</h2>
+        <nav>
+            <a href="admin-dashboard.html" class="active">🏠 儀表板</a>
+            <a href="admin-users.html">👥 使用者管理</a>
+            <a href="admin-songs.html">🎵 歌曲管理</a>
+            <a href="admin-structures.html">📝 段落結構</a>
+            <a href="../index.html">🔙 返回登入</a>
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h1>管理者儀表板</h1>
+            <div class="admin-info">
+                <div class="admin-avatar">A</div>
+                <span id="admin-name">admin</span>
+                <button class="btn btn-secondary" onclick="logout()" style="margin-left:12px;">登出</button>
+            </div>
+        </div>
+
+        <p style="color:#7f8c8d;font-size:15px;margin-bottom:8px;">歡迎回來！請選擇一個功能模組開始管理。</p>
+
+        <div class="dashboard-grid">
+            <a href="admin-users.html" class="dashboard-card">
+                <div class="icon">👥</div>
+                <h3>使用者管理</h3>
+                <p>建立、查看、管理使用者帳號，啟用或停用帳戶</p>
+                <span class="btn btn-primary">進入管理</span>
+            </a>
+
+            <a href="admin-songs.html" class="dashboard-card">
+                <div class="icon">🎵</div>
+                <h3>歌曲管理</h3>
+                <p>上傳 MIDI 檔案、管理歌曲清單、設定聲部屬性</p>
+                <span class="btn btn-primary">進入管理</span>
+            </a>
+
+            <a href="admin-structures.html" class="dashboard-card">
+                <div class="icon">📝</div>
+                <h3>段落結構</h3>
+                <p>定義歌曲段落、樂句結構，管理歌詞內容</p>
+                <span class="btn btn-primary">進入管理</span>
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // Check if user is logged in and is admin
+        const token = localStorage.getItem('token');
+        const user = JSON.parse(localStorage.getItem('user') || 'null');
+        if (!token || !user || user.role !== 'admin') {
+            window.location.href = '../index.html';
+        }
+        document.getElementById('admin-name').textContent = user.username || 'admin';
+
+        function logout() {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            window.location.href = '../index.html';
+        }
+    </script>
+</body>
+</html>

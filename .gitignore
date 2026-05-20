@@ -22,3 +22,6 @@ Thumbs.db
 # Test data
 test_data/
 output/
+
+#archived
+js/__archived__/

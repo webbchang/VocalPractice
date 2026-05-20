@@ -47,6 +47,7 @@ func (h *AdminUsersHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		ID:       user.ID,
 		Username: user.Username,
 		Email:    user.Email,
+		Role:     user.Role,
 	})
 }
 
@@ -63,6 +64,7 @@ func (h *AdminUsersHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 			ID:       u.ID,
 			Username: u.Username,
 			Email:    u.Email,
+			Role:     u.Role,
 			IsActive: u.IsActive,
 		})
 	}
@@ -94,6 +96,7 @@ func (h *AdminUsersHandler) ToggleUserActive(w http.ResponseWriter, r *http.Requ
 		ID:       user.ID,
 		Username: user.Username,
 		Email:    user.Email,
+		Role:     user.Role,
 		IsActive: user.IsActive,
 	})
 }
