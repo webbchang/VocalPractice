@@ -217,7 +217,7 @@
                 <p class="subtitle">登入以開始練習</p>
                 <input type="email" id="login-email" placeholder="Email" required>
                 <input type="password" id="login-password" placeholder="Password" required>
-                <button id="login-btn" ">登入</button>
+                <button id="login-btn">登入</button>
                 <p id="login-error" class="error"></p>
             </div>
         </div>
@@ -226,14 +226,14 @@
         <div id="songs-screen" class="screen hidden">
             <div class="header">
                 <h1>選擇歌曲</h1>
-                <button id="logout-btn" class="btn-small" >登出</button>
+                <button id="logout-btn" class="btn-small">登出</button>
             </div>
             <div id="song-list" class="list"></div>
         </div>
 
         <!-- Track Selection Screen -->
         <div id="tracks-screen" class="screen hidden">
-            <button class="btn-small back" onclick="goBackToSongs()">← 返回</button>
+            <button class="btn-small back" data-action="goBackToSongs">← 返回</button>
             <h1 id="track-song-title">選擇聲部</h1>
 
             <!-- Headset status -->
@@ -258,12 +258,12 @@
                 </div>
             </div>
 
-            <button id="start-practice-btn" onclick="startPractice()" disabled>開始練習</button>
+            <button id="start-practice-btn" disabled>開始練習</button>
         </div>
 
         <!-- Practice Screen -->
         <div id="practice-screen" class="screen hidden" style="position: relative;">
-            <button class="btn-small back" onclick="goBackToTracks()">← 返回</button>
+            <button class="btn-small back" data-action="goBackToTracks">← 返回</button>
             <h1>錄音練習</h1>
 
             <!-- Headset banner -->
@@ -280,7 +280,7 @@
 
             <div class="practice-controls">
                 <div id="recording-status">準備錄音</div>
-                <button id="record-btn" onclick="toggleRecording()">開始錄音</button>
+                <button id="record-btn">開始錄音</button>
             </div>
 
             <!-- Lyrics display -->
@@ -320,11 +320,11 @@
                     <h3>段落分數儀表板</h3>
                     <div id="segment-scores"></div>
                 </div>
-                <button id="submit-btn" onclick="submitAssessment()" class="hidden">上傳評分結果</button>
+                <button id="submit-btn" class="hidden">上傳評分結果</button>
             </div>
         </div>
     </div>
 
-    <script type="module" src="script.js"></script>
+    <script type="module" src="js/main.js"></script>
 </body>
 </html>
