@@ -48,7 +48,7 @@ func (s *Store) seedUsers() {
 	admin := &domain.User{
 		ID:           uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 		Username:     "admin",
-		Email:        "admin@vocalpractice.app",
+		Email:        "admin@localhost",
 		PasswordHash: hashPwd("admin1234"),
 		Role:         "admin",
 		IsActive:     true,
@@ -61,8 +61,8 @@ func (s *Store) seedUsers() {
 	demo := &domain.User{
 		ID:           uuid.MustParse("00000000-0000-0000-0000-000000000002"),
 		Username:     "testuser",
-		Email:        "test@example.com",
-		PasswordHash: hashPwd("password123"),
+		Email:        "test@localhost",
+		PasswordHash: hashPwd("test1234"),
 		Role:         "user",
 		IsActive:     true,
 		CreatedAt:    time.Now(),

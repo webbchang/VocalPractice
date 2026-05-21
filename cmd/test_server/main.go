@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/google/uuid"
 )
 
 func main() {
@@ -151,7 +152,18 @@ func seedTestData(store *storage.Store, midiParser *service.MIDIParser, uploadDi
 
 		log.Printf("[seed] song ready: %s - %s (%s)", song.Title, song.Artist, midiPath)
 
-		// Seed global structures visible to all tracks
+		// Find Tenor 2 track to bind structures to it
+		var tenor2TrackID *uuid.UUID
+		for i, t := range song.Tracks {
+			if t.Name == "Tenor 2" {
+				tenor2TrackID = &song.Tracks[i].ID
+				break
+			}
+		}
+		if tenor2TrackID == nil {
+			log.Printf("[seed] Tenor 2 track not found, structures will be global")
+		}
+
 		tempoEntries := make([]service.TempoEntry, len(song.TempoMap))
 		for i, te := range song.TempoMap {
 			tempoEntries[i] = service.TempoEntry{
@@ -171,19 +183,19 @@ func seedTestData(store *storage.Store, midiParser *service.MIDIParser, uploadDi
 		endTick := service.SecToTick(50.6, tempoEntries, ppq)
 
 		section := domain.NewSongStructure(
-			song.ID, nil, nil,
+			song.ID, tenor2TrackID, nil,
 			domain.StructureTypeSECTION, "Verse A",
 			15, 50.6, startTick, endTick, 1,
 		)
 
 		phrase1 := domain.NewSongStructure(
-			song.ID, nil, &section.ID,
+			song.ID, tenor2TrackID, &section.ID,
 			domain.StructureTypePHRASE, "A1",
 			15, 29, startTick, a1EndTick, 1,
 		)
 
 		phrase2 := domain.NewSongStructure(
-			song.ID, nil, &section.ID,
+			song.ID, tenor2TrackID, &section.ID,
 			domain.StructureTypePHRASE, "A2",
 			29, 50.6, a1EndTick, endTick, 2,
 		)
@@ -191,7 +203,11 @@ func seedTestData(store *storage.Store, midiParser *service.MIDIParser, uploadDi
 		if err := store.CreateStructure([]*domain.SongStructure{section, phrase1, phrase2}); err != nil {
 			log.Printf("[seed] create structures failed: %v", err)
 		} else {
-			log.Printf("[seed] global structures ready: Verse A with A1, A2")
+			if tenor2TrackID != nil {
+				log.Printf("[seed] Tenor 2 structures ready: Verse A with A1, A2")
+			} else {
+				log.Printf("[seed] global structures ready: Verse A with A1, A2")
+			}
 		}
 
 		return

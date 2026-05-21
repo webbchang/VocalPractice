@@ -1,13 +1,15 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>管理者後台 - 歌曲管理</title>
-    
+
     <link rel="stylesheet" href="admin-common.css">
     <link rel="stylesheet" href="admin-songs.css">
 </head>
+
 <body>
     <div class="sidebar">
         <h2>🎤 Vocal Practice</h2>
@@ -200,9 +202,9 @@
                     card.className = 'song-card';
                     card.innerHTML = `
                         <h4>${escapeHtml(song.title)} ${song.artist ? '🎵' : ''}</h4>
-                        <p>${escapeHtml(song.artist || '未知藝術家')} · ${song.track_count} 個聲部</p>
+                        <p>${escapeHtml(song.artist || '未知藝術家')} · ${song.track_count} 個聲軌</p>
                         <div style="margin-top: 16px; display: flex; gap: 8px;">
-                            <button class="btn btn-secondary" onclick="viewDetails('${song.id}')">檢視詳情</button>
+                            <button class="btn btn-secondary" onclick="viewDetails('${song.id}')">設定可練習聲部</button>
                             <button class="btn btn-secondary" onclick="editStructures('${song.id}')">管理段落</button>
                             <button class="btn btn-danger btn-sm" onclick="deleteSong('${song.id}', '${escapeHtml(song.title)}')">刪除</button>
                         </div>
@@ -233,38 +235,62 @@
             }
         }
 
+        // 將渲染軌道列表的邏輯獨立出來
+        function renderTrackList(songId, tracks) {
+            let trackHtml = '';
+            for (const t of tracks) {
+                const badge = t.is_vocal ? '🎤 聲部' : '🎵 伴奏';
+                trackHtml += `
+            <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1a1a2e;border-radius:6px;margin-bottom:6px;">
+                <span><strong>${escapeHtml(t.name)}</strong> · ${t.note_count} 音符 (ch ${t.channel})</span>
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <span style="font-size:13px;color:#888;">${badge}</span>
+                    <button class="btn btn-sm ${t.is_vocal ? 'btn-warning' : 'btn-success'}" onclick="toggleVocal('${songId}','${t.id}',${t.is_vocal})">
+                        ${t.is_vocal ? '設為伴奏' : '設為聲部'}
+                    </button>
+                </div>
+            </div>
+        `;
+            }
+            return trackHtml;
+        }
+
         async function viewDetails(songId) {
             try {
                 const song = await api('/songs/' + songId);
-                let trackHtml = '';
-                for (const t of song.tracks) {
-                    const badge = t.is_vocal ? '🎤 主旋律' : '🎵 伴奏';
-                    trackHtml += `
-                        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#1a1a2e;border-radius:6px;margin-bottom:6px;">
-                            <span><strong>${escapeHtml(t.name)}</strong> · ${t.note_count} 音符 (ch ${t.channel})</span>
-                            <div style="display:flex;align-items:center;gap:8px;">
-                                <span style="font-size:13px;color:#888;">${badge}</span>
-                                <button class="btn btn-sm ${t.is_vocal ? 'btn-warning' : 'btn-success'}" onclick="toggleVocal('${song.id}','${t.id}',${t.is_vocal})">
-                                    ${t.is_vocal ? '設為伴奏' : '設為主旋律'}
-                                </button>
-                            </div>
-                        </div>
-                    `;
+
+                // 檢查畫面上是否「已經有」這個歌曲的彈窗了
+                let modal = document.getElementById('song-details-modal');
+
+                if (modal) {
+                    // 如果彈窗已經存在，我們「只更新」聲部列表的區塊，然後直接 return
+                    const trackContainer = modal.querySelector('#modal-track-container');
+                    const trackCountBadge = modal.querySelector('#modal-track-count');
+                    if (trackContainer) trackContainer.innerHTML = renderTrackList(song.id, song.tracks);
+                    if (trackCountBadge) trackCountBadge.textContent = `聲部 (${song.tracks.length})`;
+                    return;
                 }
-                const modal = document.createElement('div');
+
+                //如果是第一次打開，才建立全新的彈窗外框
+                modal = document.createElement('div');
+                modal.id = 'song-details-modal'; // 加上固定 ID 方便追蹤
                 modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;';
                 modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
                 modal.innerHTML = `
-                    <div style="background:#16213e;border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
-                        <h3 style="margin-bottom:4px;">${escapeHtml(song.title)}</h3>
-                        <p style="color:#888;margin-bottom:16px;">${escapeHtml(song.artist)}</p>
-                        <div style="margin-bottom:16px;">
-                            <strong style="color:#888;font-size:13px;">聲部 (${song.tracks.length})</strong>
-                            <div style="margin-top:8px;">${trackHtml}</div>
-                        </div>
-                        <button class="btn btn-secondary" onclick="this.parentElement.parentElement.remove()">關閉</button>
+            <div style="background:#16213e;border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+                <h3 style="margin-bottom:4px;">${escapeHtml(song.title)}</h3>
+                <p style="color:#888;margin-bottom:16px;">${escapeHtml(song.artist)}</p>
+                <div style="margin-bottom:16px;">
+                    <strong id="modal-track-count" style="color:#888;font-size:13px;">聲部 (${song.tracks.length})</strong>
+                    <!-- 給軌道列表一個專屬的 ID 容器，方便局部重新渲染 -->
+                    <div id="modal-track-container" style="margin-top:8px;">
+                        ${renderTrackList(song.id, song.tracks)}
                     </div>
-                `;
+                </div>
+                <button class="btn btn-secondary" onclick="document.getElementById('song-details-modal').remove()">關閉</button>
+            </div>
+        `;
                 document.body.appendChild(modal);
             } catch (err) {
                 alert('無法載入歌曲詳情：' + err.message);
@@ -290,4 +316,5 @@
         loadSongs();
     </script>
 </body>
+
 </html>
