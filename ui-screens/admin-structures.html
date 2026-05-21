@@ -68,7 +68,6 @@
                         <option value="">請先載入歌曲...</option>
                     </select>
                 </label>
-                <button class="btn btn-sm btn-primary" onclick="saveAllLyrics()" style="float:right;">💾 儲存所有歌詞</button>
             </div>
             <div class="structure-tree" id="structure-tree">
                 <div style="text-align: center; color: #999; padding: 20px;">請先選擇歌曲</div>
@@ -664,8 +663,14 @@
                             <div class="tree-section-time">${formatTime(s.start_time)} - ${formatTime(s.end_time)} (${formatDuration(s.start_time, s.end_time)})</div>
                 `;
 
-                if (s.phrases) {
-                    for (const p of s.phrases) {
+                // Sort phrases by start_time ascending
+                const sortedPhrases = (s.phrases || []).slice().sort((a, b) => a.start_time - b.start_time);
+                const phraseCount = sortedPhrases.length;
+
+                if (phraseCount > 0) {
+                    for (let i = 0; i < phraseCount; i++) {
+                        const p = sortedPhrases[i];
+                        const isLast = (i === phraseCount - 1);
                         const lyricsVal = p.lyrics || '';
                         const playPhraseId = 'play-phrase-' + p.id;
                         html += `
@@ -676,13 +681,23 @@
                                         <span class="tree-phrase-time"> ${formatTime(p.start_time)} - ${formatTime(p.end_time)}</span>
                                         <button class="btn btn-sm btn-play" id="${playPhraseId}" onclick="togglePlay(${p.start_time}, ${p.end_time}, '${playPhraseId}')" title="試聽句子">▶️</button>
                                     </div>
-                                    <input class="lyrics-input" type="text" id="lyrics-${p.id}" placeholder="輸入歌詞..." value="${escapeHtml(lyricsVal)}">
+                                    <div class="lyrics-row">
+                                        <input class="lyrics-input" type="text" id="lyrics-${p.id}" placeholder="輸入歌詞..." value="${escapeHtml(lyricsVal)}">
+                                        ${isLast ? `<button class="btn btn-sm btn-primary" onclick="saveSectionLyrics('${s.id}')" title="儲存此段落所有歌詞">💾 儲存此段落歌詞</button>` : ''}
+                                    </div>
                                 </div>
                                 <button class="btn btn-secondary btn-sm" onclick="editStructure('${p.id}', 'PHRASE')">編輯</button>
                             </div>
                         `;
                     }
                 }
+
+                // "+ 新增句子" button aligned with left edge of phrases
+                html += `
+                    <div class="add-phrase-row">
+                        <button class="btn btn-sm btn-secondary" onclick="showAddPhrase('${s.id}')">+ 新增句子</button>
+                    </div>
+                `;
 
                 html += `</div></div>`;
             }
@@ -1022,24 +1037,27 @@
         }
 
         // --- Lyrics ---
-        async function saveAllLyrics() {
+        async function saveSectionLyrics(sectionId) {
             const trackId = document.getElementById('lyrics-track-select').value;
             if (!trackId) { alert('請先選擇聲部'); return; }
             if (!currentSongId) { alert('請先選擇歌曲'); return; }
 
+            // Find the section
+            const section = structures.find(s => s.id === sectionId);
+            if (!section || !section.phrases || section.phrases.length === 0) {
+                alert('此段落沒有句子可儲存歌詞');
+                return;
+            }
+
             const lyricsPayload = [];
-            for (const s of structures) {
-                if (s.phrases) {
-                    for (const p of s.phrases) {
-                        const input = document.getElementById('lyrics-' + p.id);
-                        if (input && input.value.trim()) {
-                            lyricsPayload.push({
-                                track_id: trackId,
-                                structure_id: p.id,
-                                lyrics: input.value.trim(),
-                            });
-                        }
-                    }
+            for (const p of section.phrases) {
+                const input = document.getElementById('lyrics-' + p.id);
+                if (input && input.value.trim()) {
+                    lyricsPayload.push({
+                        track_id: trackId,
+                        structure_id: p.id,
+                        lyrics: input.value.trim(),
+                    });
                 }
             }
 
@@ -1054,6 +1072,65 @@
             } catch (err) {
                 alert('儲存歌詞失敗：' + err.message);
             }
+        }
+
+        // --- Add Phrase helper ---
+        function showAddPhrase(sectionId) {
+            if (!currentSongId) {
+                alert('請先選擇歌曲');
+                return;
+            }
+
+            const section = structures.find(s => s.id === sectionId);
+            if (!section) {
+                alert('找不到段落');
+                return;
+            }
+
+            editingNode = null;
+            editingIsNew = true;
+
+            // Determine next phrase number and default start_time
+            const sortedPhrases = (section.phrases || []).slice().sort((a, b) => a.start_time - b.start_time);
+            const phraseCount = sortedPhrases.length;
+            const nextNum = phraseCount + 1;
+            const defaultTitle = section.title + '-' + nextNum;
+            const defaultStart = phraseCount > 0 ? sortedPhrases[phraseCount - 1].end_time : section.start_time;
+            const defaultEnd = section.end_time;
+
+            const panel = document.getElementById('edit-panel');
+            document.getElementById('edit-panel-title').textContent = '✏️ 新增句子：' + defaultTitle;
+            document.getElementById('edit-title').value = defaultTitle;
+            document.getElementById('edit-type').value = 'PHRASE';
+            document.getElementById('edit-start').value = defaultStart || 0;
+            document.getElementById('edit-end').value = defaultEnd || 0;
+            document.getElementById('edit-start-tick').value = 0;
+            document.getElementById('edit-end-tick').value = 0;
+            document.getElementById('edit-start').dispatchEvent(new Event('input'));
+            document.getElementById('edit-order').value = nextNum;
+
+            const parentSelect = document.getElementById('edit-parent');
+            parentSelect.innerHTML = '<option value="">無（段落）</option>';
+            for (const s of structures) {
+                const opt = document.createElement('option');
+                opt.value = s.id;
+                opt.textContent = s.title;
+                if (s.id === sectionId) opt.selected = true;
+                parentSelect.appendChild(opt);
+            }
+            parentSelect.style.display = 'block';
+            parentSelect.closest('.form-group').style.display = 'block';
+            updateLyricsEditorVisibility('PHRASE');
+
+            // Show hint about start time
+            const hint = document.getElementById('section-lyrics-hint');
+            if (hint) {
+                hint.style.display = 'block';
+                hint.textContent = '⏱ 開始時間以樂曲開頭 0:00 起算';
+            }
+
+            panel.style.display = 'block';
+            panel.scrollIntoView({ behavior: 'smooth' });
         }
 
         // --- Init ---

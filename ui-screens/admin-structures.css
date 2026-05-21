@@ -212,6 +212,21 @@
             padding: 2px 0;
             font-style: italic;
         }
+        .lyrics-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 4px;
+        }
+        .lyrics-row .lyrics-input {
+            flex: 1;
+            margin-top: 0;
+        }
+        .add-phrase-row {
+            margin-left: 20px;
+            margin-top: 4px;
+            padding: 4px 0;
+        }
         .btn-play {
             background: #1abc9c;
             color: white;
