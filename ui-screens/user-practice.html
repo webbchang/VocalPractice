@@ -15,7 +15,7 @@
                 <span id="username-display">singer01</span>
             </div>
             <button class="btn btn-primary" onclick="alert('歷史記錄功能開發中')">歷史記錄</button>
-            <button class="btn btn-danger" onclick="logout()">登出</button>
+            <button class="btn btn-danger" onclick="window.logout()">登出</button>
         </div>
     </div>
 
@@ -29,7 +29,7 @@
 
             <h3>選擇歌曲</h3>
             <div class="track-selector">
-                <select id="song-select" onchange="onSongChange()" style="width:100%;padding:10px;background:#1a1a2e;color:#eee;border:1px solid #333;border-radius:6px;">
+                <select id="song-select" onchange="window.onSongChange()" style="width:100%;padding:10px;background:#1a1a2e;color:#eee;border:1px solid #333;border-radius:6px;">
                     <option value="">載入中...</option>
                 </select>
             </div>
@@ -51,8 +51,8 @@
 
             <div id="range-info" class="range-info">選擇一個段落或句子開始練習</div>
             <div id="range-actions" class="range-actions" style="display:none;">
-                <button class="btn btn-sm btn-success" onclick="startPractice()">🎯 開始練習此範圍</button>
-                <button class="btn btn-sm btn-secondary" onclick="clearSelection()" style="background:#555;color:#fff;">清除</button>
+                <button class="btn btn-sm btn-success" onclick="window.startPractice()">🎯 開始練習此範圍</button>
+                <button class="btn btn-sm btn-secondary" onclick="window.clearSelection()" style="background:#555;color:#fff;">清除</button>
             </div>
         </div>
 
@@ -62,8 +62,8 @@
                 <div class="viz-header">
                     <span class="viz-title">分析視覺化</span>
                     <div class="viz-tabs">
-                        <button class="viz-tab active" onclick="switchTab(this, 'pitch')">音高曲線</button>
-                        <button class="viz-tab" onclick="switchTab(this, 'pitchroll')">鋼琴捲軸</button>
+                        <button class="viz-tab active" onclick="window.switchTab(this, 'pitch')">音高曲線</button>
+                        <button class="viz-tab" onclick="window.switchTab(this, 'pitchroll')">鋼琴捲軸</button>
                     </div>
                 </div>
                 <div class="chart-container" id="chart-area">
@@ -79,7 +79,7 @@
                     <div class="control-status" id="status-text">準備就緒</div>
                     <div class="control-timer" id="timer">00:00</div>
                 </div>
-                <button class="record-btn" id="record-btn" onclick="togglePlayback()">
+                <button class="record-btn" id="record-btn" onclick="window.togglePlayback()">
                     <svg class="record-icon" viewBox="0 0 24 24">
                         <polygon points="8,5 19,12 8,19" fill="white"/>
                     </svg>
@@ -109,10 +109,25 @@
         </div>
     </div>
 
+    <!-- 全域模組載入 (midiParser 和 songDataExtractor 維持 window global) -->
     <script src="../assets/js/midiParser.js"></script>
     <script src="../assets/js/songDataExtractor.js"></script>
-    <script>
-        // Check if user is logged in
+
+    <!-- 主入口：ES modules 版本 -->
+    <script type="module">
+        import state from '../assets/js/state.js';
+        import { loadSongs } from '../assets/js/api.js';
+        import { playRange, togglePlayback, stopPlayback, getIsPlaying } from '../assets/js/audio.js';
+        import {
+            selectTrack, selectStructure, onSongChange,
+            toggleAccompanimentTrack, startPractice
+        } from '../assets/js/practice-business.js';
+        import {
+            renderVocalTracks, renderAccompanimentTracks, renderStructureList,
+            updateSelectionUI, clearSelection, switchTab, logout
+        } from '../assets/js/practice-ui.js';
+
+        // --- 登入檢查 ---
         (function() {
             const token = localStorage.getItem('token');
             const user = JSON.parse(localStorage.getItem('user') || 'null');
@@ -121,447 +136,23 @@
             }
         })();
 
-        const API_BASE = '/api/v1';
+        // --- 將所有事件處理函式掛載到 window，讓 inline onclick 可存取 ---
+        window.onSongChange = onSongChange;
+        window.selectTrack = selectTrack;
+        window.selectStructure = selectStructure;
+        window.toggleAccompanimentTrack = toggleAccompanimentTrack;
+        window.startPractice = startPractice;
+        window.togglePlayback = togglePlayback;
+        window.clearSelection = clearSelection;
+        window.switchTab = switchTab;
+        window.logout = logout;
 
-        // --- State ---
-        let currentSongId = null;
-        let currentSongFull = null; // full song with tempo_map etc
-        let structures = [];
-        let selectedTrackId = null;
-        let selectedAccompanimentTrackIds = []; // multi-select accompaniment
-        let selectedStructure = null; // { id, start, end, title }
-        let midiData = null;
-        let parsedNotes = null;       // all parsed notes from MIDI, each has .track index
-        let referenceNotes = null;    // filtered notes for the selected track+section
-        let allTracksMeta = [];       // meta info from GET /songs/:id to map track index to UUID
-        let parsedTrackIndex = null;  // which parsedNotes track index corresponds to selectedTrackId
-        let parsedMIDITracks = [];    // track info from MIDI parsing (name, track index)
+        // 也暴露 bridge 名稱（UI 模板中使用的 window.__ 開頭函式）
+        window.__selectTrack = selectTrack;
+        window.__selectStructure = selectStructure;
+        window.__toggleAccompanimentTrack = toggleAccompanimentTrack;
 
-        // --- Audio playback ---
-        let audioCtx = null;
-        let playbackNodes = [];
-        let playbackTimer = null;
-        let isPlaying = false;
-
-        function getAudioCtx() {
-            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            return audioCtx;
-        }
-
-        function parseMIDINotes(midiArrayBuf) {
-            return window.MidiParser.parseMIDINotes(midiArrayBuf);
-        }
-
-        function midiPitchToFreq(pitch) {
-            return window.MidiParser.midiPitchToFreq(pitch);
-        }
-
-        async function loadMIDI() {
-            if (!currentSongId) return;
-            try {
-                const res = await fetch(API_BASE + '/songs/' + currentSongId + '/midi', { credentials: 'same-origin' });
-                if (!res.ok) throw new Error('Failed to load MIDI');
-                midiData = await res.arrayBuffer();
-                parsedNotes = parseMIDINotes(midiData);
-            } catch (err) {
-                console.error('MIDI load error:', err);
-                midiData = null; parsedNotes = null;
-            }
-        }
-
-        function playRange(startTime, endTime) {
-            if (!parsedNotes || parsedNotes.length === 0) return;
-            stopPlayback();
-            const ctx = getAudioCtx();
-            const gainNode = ctx.createGain();
-            gainNode.gain.value = 0.3;
-            gainNode.connect(ctx.destination);
-            const dur = endTime - startTime;
-            const now = ctx.currentTime;
-
-            // 只播放選取的音軌：主聲部 + 伴唱聲部
-            const accompanimentTrackIndices = selectedAccompanimentTrackIds
-                .map(id => {
-                    if (!currentSongFull || !currentSongFull.tracks) return -1;
-                    for (const t of currentSongFull.tracks) {
-                        if (t.id === id) return t.midi_index;
-                    }
-                    return -1;
-                })
-                .filter(idx => idx >= 0);
-            const playableTrackIndices = [parsedTrackIndex, ...accompanimentTrackIndices].filter(idx => idx >= 0);
-
-            const rangeNotes = parsedNotes.filter(n =>
-                n.start >= startTime && n.start < endTime &&
-                playableTrackIndices.includes(n.track)
-            );
-
-            for (const n of rangeNotes) {
-                const osc = ctx.createOscillator();
-                const ng = ctx.createGain();
-                osc.type = 'triangle';
-                osc.frequency.value = midiPitchToFreq(n.pitch);
-                const ls = n.start - startTime;
-                const nd = Math.min(n.dur, dur - ls);
-                if (nd <= 0.01) continue;
-                ng.gain.setValueAtTime(0, now + ls);
-                ng.gain.linearRampToValueAtTime(0.3, now + ls + 0.005);
-                ng.gain.setValueAtTime(0.3, now + ls + nd - 0.01);
-                ng.gain.linearRampToValueAtTime(0, now + ls + nd);
-                osc.connect(ng); ng.connect(gainNode);
-                osc.start(now + ls); osc.stop(now + ls + nd + 0.01);
-                playbackNodes.push(osc, ng);
-            }
-            playbackTimer = setTimeout(() => { isPlaying = false; updatePlayBtn(); stopPlayback(); }, dur * 1000 + 300);
-            isPlaying = true;
-            updatePlayBtn();
-        }
-
-        function stopPlayback() {
-            if (playbackTimer) { clearTimeout(playbackTimer); playbackTimer = null; }
-            for (const n of playbackNodes) { try { n.disconnect(); } catch(e) {} }
-            playbackNodes = [];
-            isPlaying = false;
-            updatePlayBtn();
-        }
-
-        function updatePlayBtn() {
-            const btn = document.getElementById('record-btn');
-            if (!btn) return;
-            if (isPlaying) {
-                btn.innerHTML = '<rect x="6" y="6" width="12" height="12" fill="white" style="transform: scale(0.8);"/>';
-                btn.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30"><rect x="6" y="6" width="5" height="12" fill="white"/><rect x="13" y="6" width="5" height="12" fill="white"/></svg>';
-            } else {
-                btn.innerHTML = '<svg viewBox="0 0 24 24" width="30" height="30"><polygon points="8,5 19,12 8,19" fill="white"/></svg>';
-            }
-        }
-
-        function togglePlayback() {
-            if (isPlaying) { stopPlayback(); return; }
-            if (selectedStructure) {
-                playRange(selectedStructure.start, selectedStructure.end);
-            } else {
-                alert('請先選擇一個段落或句子');
-            }
-        }
-
-        // --- API ---
-        async function api(path, options = {}) {
-            const res = await fetch(API_BASE + path, {
-                credentials: 'same-origin',
-                headers: { 'Content-Type': 'application/json' },
-                ...options,
-            });
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({ error: res.statusText }));
-                throw new Error(err.error || `HTTP ${res.status}`);
-            }
-            return res.json();
-        }
-
-        function formatTime(sec) {
-            if (sec == null) return '0:00';
-            const m = Math.floor(sec / 60);
-            const s = Math.floor(sec % 60);
-            return m + ':' + s.toString().padStart(2, '0');
-        }
-
-        // --- Load songs dropdown ---
-        async function loadSongs() {
-            try {
-                const songs = await api('/songs');
-                const select = document.getElementById('song-select');
-                select.innerHTML = '<option value="">請選擇歌曲...</option>';
-                for (const s of songs) {
-                    const opt = document.createElement('option');
-                    opt.value = s.id;
-                    opt.textContent = s.title + ' - ' + (s.artist || '未知');
-                    select.appendChild(opt);
-                }
-            } catch (err) {
-                console.error('Failed to load songs:', err);
-            }
-        }
-
-        async function onSongChange() {
-            const select = document.getElementById('song-select');
-            currentSongId = select.value || null;
-            selectedStructure = null;
-            document.getElementById('range-actions').style.display = 'none';
-            document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
-
-            if (!currentSongId) {
-                document.getElementById('song-title').textContent = '請選擇歌曲';
-                document.getElementById('song-artist').textContent = '';
-                document.getElementById('vocal-tracks').innerHTML = '<div class="no-structures">請先選擇歌曲</div>';
-                document.getElementById('structure-list').innerHTML = '<div class="no-structures">請先選擇歌曲</div>';
-                return;
-            }
-
-            try {
-                const song = await api('/songs/' + currentSongId);
-                currentSongFull = song;
-                document.getElementById('song-title').textContent = song.title;
-                document.getElementById('song-artist').textContent = song.artist;
-
-                // Load MIDI for playback
-                await loadMIDI();
-
-                // Render vocal tracks (radio) and accompaniment tracks (checkbox)
-                renderVocalTracks(song.tracks);
-                renderAccompanimentTracks(song.tracks);
-
-                // Load structures for first track if available
-                if (song.tracks.length > 0) {
-                    selectedTrackId = song.tracks[0].id;
-                    selectTrack(song.tracks[0].id);
-                }
-            } catch (err) {
-                console.error('Failed to load song:', err);
-            }
-        }
-
-        function renderVocalTracks(tracks) {
-            const container = document.getElementById('vocal-tracks');
-            if (!tracks || tracks.length === 0) {
-                container.innerHTML = '<div class="no-structures">此歌曲沒有音軌</div>';
-                return;
-            }
-
-            let html = '';
-            let hasVocal = false; // 💡 用來記錄是否有成功渲染任何一條音軌
-
-            for (const t of tracks) {
-                if (! t.is_vocal) continue; // 只顯示標記為主聲部的音軌選項
-                hasVocal = true; // 只要有一條是主聲部，就算成功渲染了主聲部選項
-                const isSelected = t.id === selectedTrackId;
-                const badgeText = t.is_vocal ? '🎤 主聲部' : '🎵 伴唱聲部';
-                html += `
-                    <div class="track-option ${isSelected ? 'selected' : ''}" onclick="selectTrack('${t.id}')">
-                        <input type="radio" name="vocal-track" ${isSelected ? 'checked' : ''}>
-                        <span class="track-name">${t.name}</span>
-                        <span class="track-badge has-structure">${badgeText}</span>
-                    </div>
-                `;
-            }
-            if (!hasVocal) {
-                container.innerHTML = '<div class="no-structures">此歌曲沒有主聲部音軌</div>';
-                return;
-            }
-            container.innerHTML = html;
-        }
-
-        function renderAccompanimentTracks(tracks) {
-            const container = document.getElementById('accompaniment-tracks');
-            if (!tracks || tracks.length === 0) {
-                container.innerHTML = '<div class="no-structures">此歌曲沒有音軌</div>';
-                return;
-            }
-
-            let html = '';
-            for (const t of tracks) {
-                const isChecked = selectedAccompanimentTrackIds.includes(t.id);
-                const badgeText = t.is_vocal ? '🎤 主聲部' : '🎵 伴唱聲部';
-                html += `
-                    <div class="track-option ${isChecked ? 'selected' : ''}" onclick="toggleAccompanimentTrack('${t.id}')">
-                        <input type="checkbox" ${isChecked ? 'checked' : ''} style="margin-right:12px;">
-                        <span class="track-name">${t.name}</span>
-                        <span class="track-badge has-structure">${badgeText}</span>
-                    </div>
-                `;
-            }
-            container.innerHTML = html;
-        }
-
-        function toggleAccompanimentTrack(trackId) {
-            const idx = selectedAccompanimentTrackIds.indexOf(trackId);
-            if (idx === -1) {
-                selectedAccompanimentTrackIds.push(trackId);
-            } else {
-                selectedAccompanimentTrackIds.splice(idx, 1);
-            }
-            // Re-render
-            if (currentSongFull && currentSongFull.tracks) {
-                renderAccompanimentTracks(currentSongFull.tracks);
-            }
-        }
-
-        function determineParsedTrackIndex() {
-            // Use the MIDI track index stored in the backend's midi_index
-            // This matches the original MIDI track index used by parsedNotes
-            if (!currentSongFull || !currentSongFull.tracks) return -1;
-            for (const t of currentSongFull.tracks) {
-                if (t.id === selectedTrackId) {
-                    return t.midi_index;
-                }
-            }
-            return -1;
-        }
-
-        function generateReferenceData() {
-            // Build reference notes from parsed MIDI: filter by track + time range.
-            if (!parsedNotes || !selectedStructure || parsedTrackIndex < 0) {
-                referenceNotes = null;
-                return;
-            }
-            const start = selectedStructure.start;
-            const end = selectedStructure.end;
-            referenceNotes = window.SongDataExtractor.extractReferenceNotes(
-                parsedNotes,
-                parsedTrackIndex,
-                start,
-                end
-            );
-            console.log(`Reference data: ${referenceNotes.length} notes from track ${parsedTrackIndex} [${start.toFixed(2)}-${end.toFixed(2)}]`);
-        }
-
-        async function selectTrack(trackId) {
-            selectedTrackId = trackId;
-            referenceNotes = null;
-            // Determine which MIDI track index corresponds to the selected UUID
-            parsedTrackIndex = determineParsedTrackIndex();
-            // Re-render both vocal and accompaniment track lists
-            if (currentSongFull && currentSongFull.tracks) {
-                renderVocalTracks(currentSongFull.tracks);
-                renderAccompanimentTracks(currentSongFull.tracks);
-            }
-            await loadStructures(trackId);
-        }
-
-        async function loadStructures(trackId) {
-            if (!currentSongId) return;
-            const container = document.getElementById('structure-list');
-            container.innerHTML = '<div class="loading-spinner">載入段落結構...</div>';
-
-            try {
-                let path = '/songs/' + currentSongId + '/structures';
-                if (trackId) path += '?track_id=' + encodeURIComponent(trackId);
-                const data = await api(path);
-                structures = data.structures || [];
-                renderStructureList();
-            } catch (err) {
-                console.error('Failed to load structures:', err);
-                container.innerHTML = '<div class="no-structures">無法載入段落結構</div>';
-            }
-        }
-
-        function renderStructureList() {
-            const container = document.getElementById('structure-list');
-            if (!structures || structures.length === 0) {
-                container.innerHTML = '<div class="no-structures">此音軌尚無段落結構<br><small>請管理員在後台設定段落</small></div>';
-                return;
-            }
-
-            let html = '';
-            for (const s of structures) {
-                const isSelected = selectedStructure && selectedStructure.id === s.id;
-                html += `
-                    <div class="structure-option ${isSelected ? 'selected' : ''}" onclick="selectStructure('${s.id}')">
-                        <span class="structure-icon">📂</span>
-                        <span class="structure-name">${s.title}</span>
-                        <span class="structure-time">${formatTime(s.start_time)} - ${formatTime(s.end_time)}</span>
-                        <button class="btn-play" onclick="event.stopPropagation();playRange(${s.start_time},${s.end_time})">▶️</button>
-                    </div>
-                `;
-                if (s.phrases) {
-                    for (const p of s.phrases) {
-                        const isPhraseSelected = selectedStructure && selectedStructure.id === p.id;
-                        html += `
-                            <div class="structure-option phrased ${isPhraseSelected ? 'selected' : ''}" onclick="selectStructure('${p.id}')">
-                                <span class="structure-icon">📄</span>
-                                <span class="structure-name">${p.title} ${p.lyrics ? '🎤' : ''}</span>
-                                <span class="structure-time">${formatTime(p.start_time)} - ${formatTime(p.end_time)}</span>
-                                <button class="btn-play" onclick="event.stopPropagation();playRange(${p.start_time},${p.end_time})">▶️</button>
-                            </div>
-                        `;
-                    }
-                }
-            }
-            container.innerHTML = html;
-        }
-
-        function selectStructure(id) {
-            // Find structure by id
-            for (const s of structures) {
-                if (s.id === id) {
-                    selectedStructure = { id: s.id, title: s.title, start: s.start_time, end: s.end_time };
-                    generateReferenceData();
-                    updateSelectionUI();
-                    return;
-                }
-                if (s.phrases) {
-                    for (const p of s.phrases) {
-                        if (p.id === id) {
-                            selectedStructure = { id: p.id, title: p.title, start: p.start_time, end: p.end_time };
-                            generateReferenceData();
-                            updateSelectionUI();
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-
-        function updateSelectionUI() {
-            if (selectedStructure) {
-                document.getElementById('range-info').textContent =
-                    `🎯 ${selectedStructure.title}：${formatTime(selectedStructure.start)} - ${formatTime(selectedStructure.end)}`;
-                document.getElementById('range-actions').style.display = 'flex';
-                document.getElementById('current-range-label').textContent =
-                    `${selectedStructure.title} (${formatTime(selectedStructure.start)})`;
-                renderStructureList(); // re-render to show selection
-            }
-        }
-
-        function clearSelection() {
-            selectedStructure = null;
-            document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
-            document.getElementById('range-actions').style.display = 'none';
-            document.getElementById('current-range-label').textContent = '未選擇';
-            renderStructureList();
-        }
-
-        function startPractice() {
-            if (!selectedStructure) {
-                alert('請先選擇一個段落或句子');
-                return;
-            }
-            if (!referenceNotes || referenceNotes.length === 0) {
-                alert('此段落尚無比對資料，請確認已選取正確的聲部');
-                return;
-            }
-            document.getElementById('status-text').textContent = `練習：${selectedStructure.title}`;
-            document.getElementById('chart-area').innerHTML = `
-                <div>
-                    <div style="font-size:48px;margin-bottom:12px;">🎯</div>
-                    <div>準備練習「${selectedStructure.title}」</div>
-                    <div style="color:#888;font-size:13px;margin-top:8px;">
-                        ${formatTime(selectedStructure.start)} → ${formatTime(selectedStructure.end)}
-                        (${(selectedStructure.end - selectedStructure.start).toFixed(1)}秒)
-                    </div>
-                    <div style="color:#27ae60;font-size:12px;margin-top:6px;">
-                        比對基準：${referenceNotes.length} 個音符（用戶端 MIDI 即時產生）
-                    </div>
-                </div>
-            `;
-            console.log('Reference notes for comparison:', referenceNotes);
-            // Auto-play the range
-            playRange(selectedStructure.start, selectedStructure.end);
-        }
-
-        function switchTab(el, tab) {
-            document.querySelectorAll('.viz-tab').forEach(t => t.classList.remove('active'));
-            el.classList.add('active');
-            // Placeholder - would switch visualization types
-        }
-
-        function logout() {
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
-            window.location.href = '/index.html';
-        }
-
-        // --- Init ---
+        // --- 初始化 ---
         loadSongs();
     </script>
 </body>
