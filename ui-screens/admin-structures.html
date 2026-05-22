@@ -701,10 +701,11 @@
                                     </div>
                                     <div class="lyrics-row">
                                         <input class="lyrics-input" type="text" id="lyrics-${p.id}" placeholder="輸入歌詞..." value="${escapeHtml(lyricsVal)}">
-                                        ${isLast ? `<button class="btn btn-sm btn-primary" onclick="saveSectionLyrics('${s.id}')" title="儲存此段落所有歌詞">💾 儲存此段落歌詞</button>` : ''}
+                                       
                                     </div>
                                 </div>
-                                <button class="btn btn-secondary btn-sm" onclick="editStructure('${p.id}', 'PHRASE')">編輯</button>
+                                <div><button class="btn btn-secondary btn-sm" onclick="editStructure('${p.id}', 'PHRASE')">編輯</button></div>
+                                 ${isLast ? `<div><button class="btn btn-sm btn-primary" onclick="saveSectionLyrics('${s.id}')" title="儲存此段落所有歌詞">💾 儲存此段落歌詞</button></div>` : ''}
                             </div>
                         `;
                     }
