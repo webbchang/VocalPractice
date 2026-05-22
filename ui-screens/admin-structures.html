@@ -72,10 +72,14 @@
             <div class="structure-tree" id="structure-tree">
                 <div style="text-align: center; color: #999; padding: 20px;">請先選擇歌曲</div>
             </div>
-            <div style="margin-top: 12px; display: flex; gap: 8px;">
+            <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
                 <button class="btn btn-primary" onclick="showAddSection()">+ 新增段落</button>
                 <button class="btn btn-secondary" onclick="showCopyFromTrackDialog()" id="copy-structures-btn">📋 從其他聲部複製段落</button>
+                <button class="btn btn-secondary" onclick="exportStructures()">📥 匯出 CSV</button>
+                <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">📤 匯入 CSV</button>
+                <input type="file" id="import-file" accept=".csv" style="display:none" onchange="importStructures(this)">
             </div>
+            <div id="import-result" style="margin-top: 8px; font-size: 13px;"></div>
         </div>
 
         <!-- 編輯面板 -->
@@ -146,6 +150,15 @@
 
     <script src="../assets/js/midiParser.js"></script>
     <script>
+        // Check if user is logged in and is admin
+        (function() {
+            const token = localStorage.getItem('token');
+            const user = JSON.parse(localStorage.getItem('user') || 'null');
+            if (!token || !user || user.role !== 'admin') {
+                window.location.href = '../index.html';
+            }
+        })();
+
         const API_BASE = '/api/v1/admin';
         const USER_API_BASE = '/api/v1';
 
@@ -295,9 +308,14 @@
         async function api(path, options = {}) {
             const base = path.startsWith('/admin') ? API_BASE : USER_API_BASE;
             const finalPath = path.startsWith('/admin') ? path.replace('/admin', '') : path;
+            const token = localStorage.getItem('token');
+            const headers = options.body instanceof FormData ? {} : { 'Content-Type': 'application/json', ...options.headers };
+            if (token) {
+                headers['Authorization'] = `Bearer ${token}`;
+            }
             const res = await fetch(base + finalPath, {
                 credentials: 'same-origin',
-                headers: options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' },
+                headers,
                 ...options,
             });
             if (!res.ok) {
@@ -1131,6 +1149,86 @@
 
             panel.style.display = 'block';
             panel.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // --- Export / Import CSV ---
+        async function exportStructures() {
+            if (!currentSongId) {
+                alert('請先選擇歌曲');
+                return;
+            }
+            try {
+                const data = await api('/songs/' + currentSongId + '/structures/export');
+                // Build a download link for the CSV
+                const blob = new Blob([data.csv], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = (data.song.title || 'song') + '-structures.csv';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                // Show track info
+                const trackNames = data.song.tracks.map(t => `${t.name} (${t.is_vocal ? '🎤' : '🎵'})`).join(', ');
+                alert(`✅ 已匯出 ${data.csv.split('\n').length - 1} 行\n\n歌曲: ${data.song.title}\n聲部: ${trackNames}\n\nCSV 格式:\ntype,title,start,end,order,track_name,lyrics\nS=段落, P=樂句\n時間單位: 秒`);
+            } catch (err) {
+                alert('匯出失敗：' + err.message);
+            }
+        }
+
+        async function importStructures(fileInput) {
+            const file = fileInput.files[0];
+            if (!file) return;
+            const resultDiv = document.getElementById('import-result');
+            resultDiv.textContent = '正在匯入...';
+            resultDiv.style.color = '#888';
+
+            try {
+                const text = await file.text();
+                const token = localStorage.getItem('token');
+                const headers = { 'Content-Type': 'text/csv' };
+                if (token) headers['Authorization'] = `Bearer ${token}`;
+
+                const res = await fetch(API_BASE + '/songs/' + currentSongId + '/structures/import?force=true', {
+                    method: 'POST',
+                    headers,
+                    body: text,
+                });
+                const data = await res.json();
+                if (!res.ok) {
+                    if (res.status === 409 && data.conflict) {
+                        // Show conflict details
+                        let msg = '⚠️ 偵測到時間範圍衝突：\n';
+                        for (const c of (data.conflicts || [])) {
+                            msg += `\n- 「${c.existing_title}」(${c.existing_start}s-${c.existing_end}s) vs 「${c.incoming_title}」(${c.incoming_start}s-${c.incoming_end}s)`;
+                        }
+                        msg += '\n\n若要強制覆蓋，請重新上傳（已在 force=true 模式）';
+                        resultDiv.textContent = '⚠️ 衝突';
+                        resultDiv.style.color = '#e74c3c';
+                        alert(msg);
+                    } else if (data.missing_tracks) {
+                        let msg = '❌ 找不到聲部：' + data.missing_tracks.join(', ');
+                        msg += '\n\n可用聲部：\n' + data.available_tracks.map(t => `- ${t.name}`).join('\n');
+                        resultDiv.textContent = '❌ 聲部不符';
+                        resultDiv.style.color = '#e74c3c';
+                        alert(msg);
+                    } else {
+                        throw new Error(data.error || `HTTP ${res.status}`);
+                    }
+                    fileInput.value = '';
+                    return;
+                }
+                resultDiv.textContent = `✅ 已匯入 ${data.imported} 筆結構`;
+                resultDiv.style.color = '#27ae60';
+                await loadStructures();
+                alert(`✅ 匯入完成！共 ${data.imported} 筆結構`);
+            } catch (err) {
+                resultDiv.textContent = '❌ 匯入失敗：' + err.message;
+                resultDiv.style.color = '#e74c3c';
+                alert('匯入失敗：' + err.message);
+            }
+            fileInput.value = '';
         }
 
         // --- Init ---

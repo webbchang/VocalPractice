@@ -89,6 +89,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 type contextKey string
 
 const UserIDKey contextKey = "user_id"
+const UserRoleKey contextKey = "user_role"
 
 func (h *AuthHandler) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -110,11 +111,39 @@ func (h *AuthHandler) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Set user ID in request context
+		// Fetch full user to get role
+		user, err := h.store.GetUserByID(userID)
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "user not found")
+			return
+		}
+
+		// Set user ID and role in request context
 		ctx := r.Context()
 		ctx = context.WithValue(ctx, UserIDKey, userID)
+		ctx = context.WithValue(ctx, UserRoleKey, user.Role)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// RequireRole returns middleware that checks if the authenticated user has one of the required roles.
+func (h *AuthHandler) RequireRole(roles ...string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			role, ok := r.Context().Value(UserRoleKey).(string)
+			if !ok || role == "" {
+				respondError(w, http.StatusForbidden, "access denied")
+				return
+			}
+			for _, allowed := range roles {
+				if role == allowed {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			respondError(w, http.StatusForbidden, "insufficient permissions")
+		})
+	}
 }
 
 func (h *AuthHandler) generateToken(userID uuid.UUID, email string) (string, error) {

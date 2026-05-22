@@ -64,8 +64,11 @@ func main() {
 		w.Write([]byte(`{"status":"ok"}`))
 	})
 
-	// === Admin API (no auth required for simplicity in demo) ===
+	// === Admin API (requires auth + admin role) ===
 	r.Route("/api/v1/admin", func(r chi.Router) {
+		r.Use(authHandler.Middleware)
+		r.Use(authHandler.RequireRole("admin"))
+
 		// Users
 		r.Post("/users", adminUsersHandler.CreateUser)
 		r.Get("/users", adminUsersHandler.ListUsers)
@@ -80,6 +83,8 @@ func main() {
 
 		// Structures
 		r.Post("/songs/{song_id}/structures", adminStructuresHandler.BulkCreate)
+		r.Get("/songs/{song_id}/structures/export", adminStructuresHandler.ExportStructures)
+		r.Post("/songs/{song_id}/structures/import", adminStructuresHandler.ImportStructures)
 		r.Post("/songs/{song_id}/structures/{section_id}/copy-phrases", adminStructuresHandler.CopySectionPhrases)
 		r.Put("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Update)
 		r.Delete("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Delete)

@@ -251,6 +251,18 @@ func (s *Store) DeleteStructure(id uuid.UUID) error {
 	return nil
 }
 
+func (s *Store) DeleteAllStructuresBySong(songID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for sid, st := range s.structures {
+		if st.SongID == songID {
+			delete(s.structures, sid)
+		}
+	}
+	return nil
+}
+
 func (s *Store) ListStructuresBySong(songID uuid.UUID) ([]*domain.SongStructure, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

@@ -3,10 +3,12 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 )
 
 var ErrInvalidToken = errors.New("invalid token")
+var ErrForbidden = errors.New("forbidden")
 
 type errorResponse struct {
 	Error string `json:"error"`
@@ -22,4 +24,8 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func respondError(w http.ResponseWriter, status int, msg string) {
 	respondJSON(w, status, errorResponse{Error: msg})
+}
+
+func readAll(r io.Reader) ([]byte, error) {
+	return io.ReadAll(r)
 }

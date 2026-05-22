@@ -741,6 +741,15 @@
     </div>
 
     <script>
+        // Check if user is logged in
+        (function() {
+            const token = localStorage.getItem('token');
+            const user = JSON.parse(localStorage.getItem('user') || 'null');
+            if (!token || !user) {
+                window.location.href = '../index.html';
+            }
+        })();
+
         let currentAssessmentId = null;
         let storageUsed = 450; // MB
         let storageTotal = 1000; // MB
