@@ -17,6 +17,8 @@ function setupDOM() {
         </button>
         <div class="viz-tab active"></div>
         <div class="viz-tab"></div>
+        <div id="lyrics-content"></div>
+        <div id="lyrics-status"></div>
     `;
 }
 
@@ -32,8 +34,14 @@ vi.mock('../audio.js', () => {
     };
 });
 
+// Mock practice-business.js for lyrics panel tests
+vi.mock('../practice-business.js', () => ({
+    getLyricsForSelection: vi.fn(),
+}));
+
 describe('practice-ui.js', () => {
     let uiModule;
+    let mockGetLyrics;
 
     beforeEach(async () => {
         setupDOM();
@@ -41,9 +49,15 @@ describe('practice-ui.js', () => {
         // Reset state for clean test
         state.structures = [];
         state.selectedStructure = null;
+        state.selectedPhraseIds = [];
+        state.selectedPhrasesData = [];
         state.selectedAccompanimentTrackIds = [];
         state.selectedTrackId = null;
         uiModule = await import('../practice-ui.js');
+
+        // Import the mock for getLyricsForSelection
+        const { getLyricsForSelection } = await import('../practice-business.js');
+        mockGetLyrics = getLyricsForSelection;
     });
 
     afterEach(() => {
@@ -139,6 +153,95 @@ describe('practice-ui.js', () => {
             expect(container.innerHTML).toContain('Line 1');
             expect(container.innerHTML).toContain('Line 2');
         });
+
+        it('should highlight multiple selected phrases', () => {
+            state.structures = [
+                {
+                    id: 's1', title: 'Verse', start_time: 0, end_time: 10,
+                    phrases: [
+                        { id: 'p1', title: 'Line 1', start_time: 0, end_time: 5 },
+                        { id: 'p2', title: 'Line 2', start_time: 5, end_time: 10 },
+                    ],
+                },
+            ];
+            state.selectedPhraseIds = ['p1', 'p2'];
+            state.selectedStructure = { id: 'p1,p2', title: 'Line 1 ~ Line 2（2句）', start: 0, end: 10 };
+
+            uiModule.renderStructureList();
+            const container = document.getElementById('structure-list');
+            // Both phrases should have 'selected' class
+            expect(container.innerHTML).toContain('class="structure-option phrased selected"');
+        });
+
+        it('should NOT highlight section when phrases are selected', () => {
+            state.structures = [
+                {
+                    id: 's1', title: 'Verse', start_time: 0, end_time: 10,
+                    phrases: [
+                        { id: 'p1', title: 'Line 1', start_time: 0, end_time: 5 },
+                    ],
+                },
+            ];
+            state.selectedPhraseIds = ['p1'];
+            state.selectedStructure = { id: 'p1', title: 'Line 1', start: 0, end: 5 };
+
+            uiModule.renderStructureList();
+            const container = document.getElementById('structure-list');
+            // Section should NOT have class 'selected' when phrases are selected
+            // (its id doesn't match selected id when selectedPhraseIds is non-empty)
+            expect(container.innerHTML).not.toContain('structure-option selected');
+        });
+    });
+
+    describe('renderLyricsPanel', () => {
+        it('should show placeholder when nothing selected', () => {
+            state.selectedStructure = null;
+            state.selectedPhraseIds = [];
+            uiModule.renderLyricsPanel();
+            const container = document.getElementById('lyrics-content');
+            expect(container.innerHTML).toContain('選擇段落或句子以顯示歌詞');
+            expect(document.getElementById('lyrics-status').textContent).toBe('未選取');
+        });
+
+        it('should show placeholder when getLyricsForSelection returns empty', () => {
+            state.selectedStructure = { id: 's1', title: 'Verse', start: 0, end: 10 };
+            mockGetLyrics.mockReturnValue({ phrases: [], count: 0 });
+            uiModule.renderLyricsPanel();
+            const container = document.getElementById('lyrics-content');
+            expect(container.innerHTML).toContain('無歌詞資料');
+            expect(document.getElementById('lyrics-status').textContent).toBe('無歌詞');
+        });
+
+        it('should render phrase labels and text for each phrase with lyrics', () => {
+            state.selectedStructure = { id: 's1', title: 'Verse', start: 0, end: 10 };
+            mockGetLyrics.mockReturnValue({
+                phrases: [
+                    { title: 'Line 1', lyrics: 'Hello world' },
+                    { title: 'Line 2', lyrics: 'Foo bar' },
+                ],
+                count: 2,
+            });
+            uiModule.renderLyricsPanel();
+            const container = document.getElementById('lyrics-content');
+            expect(container.innerHTML).toContain('Line 1');
+            expect(container.innerHTML).toContain('Line 2');
+            expect(container.innerHTML).toContain('Hello world');
+            expect(container.innerHTML).toContain('Foo bar');
+            expect(document.getElementById('lyrics-status').textContent).toBe('2 句');
+        });
+
+        it('should render "此句無歌詞" for phrases without lyrics', () => {
+            state.selectedStructure = { id: 's1', title: 'Verse', start: 0, end: 10 };
+            mockGetLyrics.mockReturnValue({
+                phrases: [
+                    { title: 'Line 1', lyrics: '' },
+                ],
+                count: 1,
+            });
+            uiModule.renderLyricsPanel();
+            const container = document.getElementById('lyrics-content');
+            expect(container.innerHTML).toContain('此句無歌詞');
+        });
     });
 
     describe('clearSelection', () => {
@@ -147,6 +250,15 @@ describe('practice-ui.js', () => {
             expect(document.getElementById('range-info').textContent).toContain('選擇一個段落或句子');
             expect(document.getElementById('range-actions').style.display).toBe('none');
             expect(document.getElementById('current-range-label').textContent).toBe('未選擇');
+        });
+
+        it('should reset selectedPhraseIds and selectedPhrasesData in state', () => {
+            state.selectedPhraseIds = ['p1', 'p2'];
+            state.selectedPhrasesData = [{ id: 'p1' }, { id: 'p2' }];
+            uiModule.clearSelection();
+            expect(state.selectedPhraseIds).toEqual([]);
+            expect(state.selectedPhrasesData).toEqual([]);
+            expect(state.selectedStructure).toBeNull();
         });
     });
 

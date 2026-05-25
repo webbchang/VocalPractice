@@ -7,7 +7,9 @@ const state = {
     structures: [],
     selectedTrackId: null,
     selectedAccompanimentTrackIds: [],
-    selectedStructure: null, // { id, start, end, title }
+    selectedStructure: null, // { id, start, end, title } — section 或合併範圍
+    selectedPhraseIds: [],   // 多選的 phrase ID 陣列（連續句子）
+    selectedPhrasesData: [], // 對應的 phrase 原始資料（含 lyrics）
     midiData: null,
     parsedNotes: null,
     referenceNotes: null,

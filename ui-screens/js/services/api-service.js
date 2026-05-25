@@ -51,6 +51,11 @@ export const SongService={
         return this._request(path);
     },
 
+    /** getMidi — 別名，與 getMIDIData 相同 */
+    getMidi(songId) {
+        return this.getMIDIData(songId);
+    },
+
     /** 獲取 MIDI 二進制資料 */
     async getMIDIData(songId) {
         const token = localStorage.getItem('token');
@@ -100,7 +105,7 @@ export const SongService={
 
     /** 匯出 CSV 資料 */
     exportCSV(songId) {
-        return this._request(`/songs/${songId}/structures/export`);
+        return this._request(`/admin/songs/${songId}/structures/export`);
     },
 
     /** 匯入 CSV 並處理衝突  */

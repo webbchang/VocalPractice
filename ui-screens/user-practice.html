@@ -106,6 +106,17 @@
                     </div>
                 </div>
             </div>
+
+            <!-- 歌詞面板 -->
+            <div class="lyrics-panel" id="lyrics-panel">
+                <div class="lyrics-header">
+                    <span class="lyrics-title">📝 歌詞</span>
+                    <span class="lyrics-status" id="lyrics-status">未選取</span>
+                </div>
+                <div class="lyrics-content" id="lyrics-content">
+                    <div class="lyrics-placeholder">選擇段落或句子以顯示歌詞</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -146,6 +157,9 @@
         window.clearSelection = clearSelection;
         window.switchTab = switchTab;
         window.logout = logout;
+
+        // 暴露 playRange 給 inline onclick（段落/句子的 ▶️ 按鈕）
+        window.playRange = playRange;
 
         // 也暴露 bridge 名稱（UI 模板中使用的 window.__ 開頭函式）
         window.__selectTrack = selectTrack;

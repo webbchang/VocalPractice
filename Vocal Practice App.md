@@ -6,7 +6,7 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 
 ## 技術架構
 
-- **版本**: 0.11
+- **版本**: 0.13
 - **語言**: Go (後端), HTML/CSS/JavaScript (前端)
 - **架構模式**: 領域驅動設計 (DDD)
 - **認證方式**: JWT Token
@@ -225,6 +225,15 @@ Stores assessment results submitted by users after practicing. Each record is as
 ### DELETE /api/v1/admin/songs/{song_id}/structures/{structure_id}
 
 * Action: Removes a segment. SECTION deletion cascade-deletes nested PHRASE units.
+
+### GET /api/v1/admin/songs/{song_id}/structures/export
+
+* Action: Exports all section/phrase structures as a CSV file.
+
+### POST /api/v1/admin/songs/{song_id}/structures/import
+
+* Action: Imports structures from CSV content. Supports `?force=true` query parameter to overwrite existing structures.
+* Payload: `text/csv` body with CSV content.
 
 ### POST /api/v1/admin/songs/{song_id}/lyrics
 

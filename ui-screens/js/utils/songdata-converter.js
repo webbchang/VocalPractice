@@ -39,11 +39,23 @@ export const SongDataConverter = {
         const s = Math.floor(sec % 60);
         return `${m}:${s.toString().padStart(2, '0')}`;
     },
-    // 將 API 平鋪的回傳值轉換為具有父子關係的物件，供 renderTree 使用
+    // 將 API 回傳值轉換為具有父子關係的物件，供 renderTree 使用
     normalizeStructures(rawApiData) {
         if (!rawApiData || !Array.isArray(rawApiData)) return [];
 
-        // 1. 分離段落與樂句
+        // 檢查 API 回傳是否已經是 nested tree 格式 (phrases 內嵌在 section 中)
+        const hasNestedPhrases = rawApiData.some(
+            item => item.type === 'SECTION' && Array.isArray(item.phrases)
+        );
+
+        if (hasNestedPhrases) {
+            // 已是 tree 格式：直接排序後回傳，不重新組合以免蓋掉 phrases
+            return rawApiData
+                .filter(item => item.type === 'SECTION')
+                .sort((a, b) => a.start_time - b.start_time);
+        }
+
+        // flat 格式：分離段落與樂句後重新組合
         const sections = rawApiData.filter(item => item.type === 'SECTION');
         const phrases = rawApiData.filter(item => item.type === 'PHRASE');
 
@@ -52,7 +64,6 @@ export const SongDataConverter = {
                 .filter(p => p.parent_id === section.id)
                 .sort((a, b) => a.start_time - b.start_time);
 
-            // 使用展開運算子建立包含樂句的段落物件 [10]
             return { ...section, phrases: sortedPhrases };
         }).sort((a, b) => a.start_time - b.start_time);
 

@@ -30,6 +30,24 @@ export const UIErrorHandler = {
     handleConflict(data){
         this.showDetailedModal("資料衝突", "發現資料衝突，請檢查後再試一次。");
     },
+    showDetailedModal(title, message) {
+        // 移除可能已存在的舊 modal
+        const existing = document.querySelector('.error-detail-modal');
+        if (existing) existing.remove();
+
+        const modal = document.createElement('div');
+        modal.className = 'error-detail-modal';
+        modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;';
+        modal.onclick = function(e) { if (e.target === this) this.remove(); };
+        modal.innerHTML = `
+            <div style="background:#16213e;border-radius:12px;padding:24px;max-width:500px;width:90%;max-height:80vh;overflow-y:auto;">
+                <h3 style="margin-bottom:16px;color:#e74c3c;">⚠️ ${title}</h3>
+                <p style="color:#ccc;margin-bottom:16px;white-space:pre-wrap;">${message}</p>
+                <button class="btn btn-secondary" style="margin-top:8px;" onclick="this.closest('.error-detail-modal').remove()">關閉</button>
+            </div>`;
+        document.body.appendChild(modal);
+    },
+
     handleAuthError(){
         alert("登入逾時，請重新登入");
         window.location.href = '../index.html';

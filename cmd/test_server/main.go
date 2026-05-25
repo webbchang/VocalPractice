@@ -75,6 +75,8 @@ func main() {
 		r.Delete("/songs/{song_id}", adminSongsHandler.DeleteSong)
 
 		r.Post("/songs/{song_id}/structures", adminStructuresHandler.BulkCreate)
+		r.Get("/songs/{song_id}/structures/export", adminStructuresHandler.ExportStructures)
+		r.Post("/songs/{song_id}/structures/import", adminStructuresHandler.ImportStructures)
 		r.Put("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Update)
 		r.Delete("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Delete)
 

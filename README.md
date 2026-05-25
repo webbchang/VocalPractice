@@ -249,6 +249,25 @@ DELETE /api/v1/admin/songs/{song_id}/structures/{structure_id}
 
 > SECTION 刪除時會級聯刪除巢狀的 PHRASE。
 
+#### 匯出段落結構為 CSV
+
+```
+GET /api/v1/admin/songs/{song_id}/structures/export
+```
+
+回應為 CSV 格式檔案，包含所有 SECTION/PHRASE 的結構資料。
+
+#### 從 CSV 匯入段落結構
+
+```
+POST /api/v1/admin/songs/{song_id}/structures/import
+Content-Type: text/csv
+
+csv_content_here
+```
+
+可選參數：`?force=true` 強制覆蓋現有結構。
+
 #### 歌詞批量管理
 
 ```

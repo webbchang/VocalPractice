@@ -28,7 +28,7 @@
         <div class="card">
             <div class="song-selector">
                 <label for="song-select"><strong>選擇歌曲：</strong></label>
-                <select id="song-select" onchange="onSongChange()">
+                <select id="song-select">
                     <option value="">請選擇歌曲...</option>
                 </select>
             </div>
@@ -42,7 +42,7 @@
             </div>
             <div class="timeline-container">
                 <div class="timeline" id="timeline"></div>
-                <div class="stats-bar" id="stats-bar">
+                <div class="stats-bar">
                     <div class="stat-item">
                         <div class="stat-value" id="stat-sections">0</div>
                         <div class="stat-label">段落數</div>
@@ -64,7 +64,7 @@
             <h3>結構清單</h3>
             <div class="track-selector-lyrics">
                 <label><strong>編輯歌詞的聲部：</strong>
-                    <select id="lyrics-track-select" onchange="loadStructures()">
+                    <select id="lyrics-track-select">
                         <option value="">請先載入歌曲...</option>
                     </select>
                 </label>
@@ -73,11 +73,11 @@
                 <div style="text-align: center; color: #999; padding: 20px;">請先選擇歌曲</div>
             </div>
             <div style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
-                <button class="btn btn-primary" onclick="showAddSection()">+ 新增段落</button>
-                <button class="btn btn-secondary" onclick="showCopyFromTrackDialog()" id="copy-structures-btn">📋 從其他聲部複製段落</button>
-                <button class="btn btn-secondary" onclick="exportStructures()">📥 匯出 CSV</button>
-                <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()">📤 匯入 CSV</button>
-                <input type="file" id="import-file" accept=".csv" style="display:none" onchange="importStructures(this)">
+                <button class="btn btn-primary" id="btn-add-section">+ 新增段落</button>
+                <button class="btn btn-secondary" id="btn-copy-structures">📋 從其他聲部複製段落</button>
+                <button class="btn btn-secondary" id="btn-export-csv">📥 匯出 CSV</button>
+                <button class="btn btn-secondary" id="btn-import-csv-trigger">📤 匯入 CSV</button>
+                <input type="file" id="import-file" accept=".csv" style="display:none">
             </div>
             <div id="import-result" style="margin-top: 8px; font-size: 13px;"></div>
         </div>
@@ -141,15 +141,15 @@
                     提示：SECTION 不儲存歌詞，請使用 PHRASE 編輯歌詞。
                 </div>
                 <div style="margin-top: 16px;">
-                    <button class="btn btn-primary" onclick="saveEdit()">💾 儲存</button>
-                    <button class="btn btn-secondary" onclick="cancelEdit()">取消</button>
+                    <button class="btn btn-primary" id="btn-save-edit">💾 儲存</button>
+                    <button class="btn btn-secondary" id="btn-cancel-edit">取消</button>
                 </div>
             </div>
         </div>
     </div>
 
     <script src="../assets/js/midiParser.js"></script>
-    <script type = "module" src="js/admin.js"></script>
+    <script type="module" src="js/admin.js"></script>
     
 </body>
 </html>
