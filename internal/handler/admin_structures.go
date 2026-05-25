@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"vocal-practice-app/internal/domain"
+	"vocal-practice-app/internal/service"
 	"vocal-practice-app/internal/storage"
 
 	"github.com/go-chi/chi/v5"
@@ -552,6 +553,10 @@ func (h *AdminStructuresHandler) ImportStructures(w http.ResponseWriter, r *http
 		deleteAllLyricsByStructure(h.store, ex.ID)
 	}
 
+	// Get tempo map for tick calculation
+	svcTempoMap := convertTempoMap(song.TempoMap)
+	tpq := song.TicksPerQuarter
+
 	// Build and save new structures
 	var allStructs []*domain.SongStructure
 	sectionByTitle := make(map[string]*domain.SongStructure)
@@ -569,7 +574,7 @@ func (h *AdminStructuresHandler) ImportStructures(w http.ResponseWriter, r *http
 			}
 		}
 		if e.Type == "S" {
-			st := domain.NewSongStructure(songID, trackID, nil, domain.StructureTypeSECTION, e.Title, e.Start, e.End, 0, 0, e.Order)
+			st := domain.NewSongStructure(songID, trackID, nil, domain.StructureTypeSECTION, e.Title, e.Start, e.End, service.SecToTick(e.Start, svcTempoMap, tpq), service.SecToTick(e.End, svcTempoMap, tpq), e.Order)
 			allStructs = append(allStructs, st)
 			sectionByTitle[e.Title] = st
 		} else if e.Type == "P" {
@@ -584,7 +589,7 @@ func (h *AdminStructuresHandler) ImportStructures(w http.ResponseWriter, r *http
 				respondError(w, http.StatusBadRequest, "phrase '"+e.Title+"' has no containing section")
 				return
 			}
-			ph := domain.NewSongStructure(songID, trackID, &parent.ID, domain.StructureTypePHRASE, e.Title, e.Start, e.End, 0, 0, e.Order)
+			ph := domain.NewSongStructure(songID, trackID, &parent.ID, domain.StructureTypePHRASE, e.Title, e.Start, e.End, service.SecToTick(e.Start, svcTempoMap, tpq), service.SecToTick(e.End, svcTempoMap, tpq), e.Order)
 			allStructs = append(allStructs, ph)
 			if e.Lyrics != "" && trackID != nil {
 				lyricsBatch = append(lyricsBatch, struct {
@@ -722,6 +727,20 @@ func deleteAllLyricsByStructure(store *storage.Store, structureID uuid.UUID) {
 	_ = structureID // no-op: lyrics are already handled by DeleteTrackLyrics calls above
 }
 
+// convertTempoMap converts domain TempoMapEntry slice to service TempoEntry slice
+// for use with service.SecToTick.
+func convertTempoMap(entries []domain.TempoMapEntry) []service.TempoEntry {
+	result := make([]service.TempoEntry, len(entries))
+	for i, e := range entries {
+		result[i] = service.TempoEntry{
+			Tick:        e.Tick,
+			TimeSec:     e.TimeSec,
+			TempoUSecQN: e.TempoUSecQN,
+		}
+	}
+	return result
+}
+
 func (h *AdminStructuresHandler) CopySectionPhrases(w http.ResponseWriter, r *http.Request) {
 	songID, err := uuid.Parse(chi.URLParam(r, "song_id"))
 	if err != nil {
@@ -817,5 +836,190 @@ func (h *AdminStructuresHandler) CopySectionPhrases(w http.ResponseWriter, r *ht
 		"source_section": sourceSectionID,
 		"target_section": targetSectionID,
 		"structures":     tree,
+	})
+}
+
+func (h *AdminStructuresHandler) CopyStructuresFromSong(w http.ResponseWriter, r *http.Request) {
+	targetSongID, err := uuid.Parse(chi.URLParam(r, "song_id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid song_id")
+		return
+	}
+	sourceSongID, err := uuid.Parse(chi.URLParam(r, "source_song_id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid source_song_id")
+		return
+	}
+
+	if sourceSongID == targetSongID {
+		respondError(w, http.StatusBadRequest, "source and target song must be different")
+		return
+	}
+
+	sourceSong, err := h.store.GetSongByID(sourceSongID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "source song not found")
+		return
+	}
+
+	targetSong, err := h.store.GetSongByID(targetSongID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "target song not found")
+		return
+	}
+
+	// Check if target song already has structures
+	existing, _ := h.store.ListStructuresBySong(targetSongID)
+	force := r.URL.Query().Get("force") == "true"
+	if len(existing) > 0 && !force {
+		respondJSON(w, http.StatusConflict, map[string]interface{}{
+			"conflict":       true,
+			"existing_count": len(existing),
+			"message":        "target song already has structures, use ?force=true to overwrite",
+		})
+		return
+	}
+
+	// Get all structures from source song
+	sourceStructures, err := h.store.ListStructuresBySong(sourceSongID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to list source structures")
+		return
+	}
+
+	if len(sourceStructures) == 0 {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"song_id":      targetSongID,
+			"copied_count": 0,
+			"structures":   []*domain.StructureNode{},
+		})
+		return
+	}
+
+	// Get target song's tempo map for tick remapping
+	svcTempoMap := convertTempoMap(targetSong.TempoMap)
+	tpq := targetSong.TicksPerQuarter
+
+	// Delete existing structures on target song if force
+	if len(existing) > 0 {
+		h.store.DeleteAllStructuresBySong(targetSongID)
+		for _, ex := range existing {
+			if ex.TrackID != nil {
+				h.store.DeleteTrackLyrics(*ex.TrackID, ex.ID)
+			}
+			deleteAllLyricsByStructure(h.store, ex.ID)
+		}
+	}
+
+	// Build old ID -> new ID mapping for parent references
+	idMap := make(map[uuid.UUID]uuid.UUID, len(sourceStructures))
+
+	// First pass: create all new structures, track old->new ID mapping
+	newStructures := make([]*domain.SongStructure, 0, len(sourceStructures))
+	for _, st := range sourceStructures {
+		newID := uuid.New()
+		idMap[st.ID] = newID
+
+		// Remap ticks using target song's tempo map
+		newStartTick := service.SecToTick(st.StartTime, svcTempoMap, tpq)
+		newEndTick := service.SecToTick(st.EndTime, svcTempoMap, tpq)
+
+		var newParentID *uuid.UUID
+		if st.ParentID != nil {
+			if mapped, ok := idMap[*st.ParentID]; ok {
+				newParentID = &mapped
+			}
+		}
+
+		// Copy trackID only if a track with same name exists in target song
+		var newTrackID *uuid.UUID
+		if st.TrackID != nil {
+			// Find track name from source song, match to target song
+			for _, srcTrack := range sourceSong.Tracks {
+				if srcTrack.ID == *st.TrackID {
+					for _, tgtTrack := range targetSong.Tracks {
+						if tgtTrack.Name == srcTrack.Name {
+							newTrackID = &tgtTrack.ID
+							break
+						}
+					}
+					break
+				}
+			}
+		}
+
+		copied := &domain.SongStructure{
+			ID:        newID,
+			SongID:    targetSongID,
+			TrackID:   newTrackID,
+			ParentID:  newParentID,
+			Type:      st.Type,
+			Title:     st.Title,
+			StartTime: st.StartTime,
+			EndTime:   st.EndTime,
+			StartTick: newStartTick,
+			EndTick:   newEndTick,
+			OrderIdx:  st.OrderIdx,
+		}
+		newStructures = append(newStructures, copied)
+	}
+
+	// Save all structures
+	if err := h.store.CreateStructure(newStructures); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to create structures")
+		return
+	}
+
+	// Copy lyrics: map old structureID -> new structureID
+	sourceLyrics, _ := h.store.ListTrackLyricsBySong(sourceSongID)
+	lyricsCopied := 0
+	for _, l := range sourceLyrics {
+		newStructID, ok := idMap[l.StructureID]
+		if !ok {
+			continue
+		}
+		// Find track ID mapping
+		var newTrackID *uuid.UUID
+		for _, srcTrack := range sourceSong.Tracks {
+			if srcTrack.ID == l.TrackID {
+				for _, tgtTrack := range targetSong.Tracks {
+					if tgtTrack.Name == srcTrack.Name {
+						newTrackID = &tgtTrack.ID
+						break
+					}
+				}
+				break
+			}
+		}
+		if newTrackID != nil {
+			if err := h.store.UpsertTrackLyrics(*newTrackID, newStructID, l.Lyrics); err == nil {
+				lyricsCopied++
+			}
+		}
+	}
+
+	tree, err := h.store.BuildStructureTree(targetSongID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to build tree")
+		return
+	}
+
+	respondJSON(w, http.StatusCreated, map[string]interface{}{
+		"song_id":        targetSongID,
+		"source_song_id": sourceSongID,
+		"copied_count":   len(newStructures),
+		"lyrics_copied":  lyricsCopied,
+		"out_of_range_warning": len(newStructures) > 0 && newStructures[len(newStructures)-1].EndTick > 0 && newStructures[len(newStructures)-1].EndTime > func() float64 {
+			var maxTime float64
+			for _, t := range targetSong.Tracks {
+				for _, n := range t.Notes {
+					if n.EndTime > maxTime {
+						maxTime = n.EndTime
+					}
+				}
+			}
+			return maxTime
+		}(),
+		"structures": tree,
 	})
 }

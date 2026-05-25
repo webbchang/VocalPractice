@@ -85,6 +85,7 @@ func main() {
 		r.Post("/songs/{song_id}/structures", adminStructuresHandler.BulkCreate)
 		r.Get("/songs/{song_id}/structures/export", adminStructuresHandler.ExportStructures)
 		r.Post("/songs/{song_id}/structures/import", adminStructuresHandler.ImportStructures)
+		r.Post("/songs/{song_id}/structures/copy-from/{source_song_id}", adminStructuresHandler.CopyStructuresFromSong)
 		r.Post("/songs/{song_id}/structures/{section_id}/copy-phrases", adminStructuresHandler.CopySectionPhrases)
 		r.Put("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Update)
 		r.Delete("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Delete)
