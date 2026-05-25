@@ -166,6 +166,57 @@ func (s *Store) ListSongs() ([]*domain.Song, error) {
 	return result, nil
 }
 
+func (s *Store) ListActiveSongs() ([]*domain.Song, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]*domain.Song, 0)
+	for _, song := range s.songs {
+		if song.IsActive {
+			result = append(result, song)
+		}
+	}
+	return result, nil
+}
+
+func (s *Store) ListVersionsByGroup(groupID uuid.UUID) ([]*domain.Song, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	result := make([]*domain.Song, 0)
+	for _, song := range s.songs {
+		if song.VersionGroup == groupID {
+			result = append(result, song)
+		}
+	}
+	// Sort by created_at descending
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].CreatedAt.After(result[j].CreatedAt)
+	})
+	return result, nil
+}
+
+func (s *Store) SetActiveVersion(groupID, songID uuid.UUID) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Deactivate all songs in this group, then activate the target
+	for _, song := range s.songs {
+		if song.VersionGroup == groupID {
+			song.IsActive = false
+		}
+	}
+	target, ok := s.songs[songID]
+	if !ok {
+		return ErrNotFound
+	}
+	if target.VersionGroup != groupID {
+		return ErrNotFound
+	}
+	target.IsActive = true
+	return nil
+}
+
 func (s *Store) DeleteSong(id uuid.UUID) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

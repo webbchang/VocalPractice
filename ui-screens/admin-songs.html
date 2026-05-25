@@ -215,12 +215,15 @@
                 for (const song of songs) {
                     const card = document.createElement('div');
                     card.className = 'song-card';
+                    const activeBadge = song.is_active ? '' : '<span style="font-size:11px;color:#888;margin-left:8px;">(非活躍)</span>';
                     card.innerHTML = `
-                        <h4>${escapeHtml(song.title)} ${song.artist ? '🎵' : ''}</h4>
+                        <h4>${escapeHtml(song.title)} ${song.artist ? '🎵' : ''} <span style="font-size:12px;color:#888;font-weight:normal;">${escapeHtml(song.version_label || '')}</span>${activeBadge}</h4>
                         <p>${escapeHtml(song.artist || '未知藝術家')} · ${song.track_count} 個聲軌</p>
-                        <div style="margin-top: 16px; display: flex; gap: 8px;">
+                        <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
                             <button class="btn btn-secondary" onclick="viewDetails('${song.id}')">設定可練習聲部</button>
                             <button class="btn btn-secondary" onclick="editStructures('${song.id}')">管理段落</button>
+                            <button class="btn btn-secondary" onclick="showNewVersionModal('${song.id}', '${escapeHtml(song.title)}', '${escapeHtml(song.artist)}')">📋 新增版本</button>
+                            <button class="btn btn-secondary" onclick="showVersions('${song.id}', '${escapeHtml(song.title)}')">📜 版本歷史</button>
                             <button class="btn btn-danger btn-sm" onclick="deleteSong('${song.id}', '${escapeHtml(song.title)}')">刪除</button>
                         </div>
                     `;
@@ -324,6 +327,187 @@
                 loadSongs();
             } catch (err) {
                 alert('刪除失敗：' + err.message);
+            }
+        }
+
+        // --- 版本管理 ---
+
+        let newVersionSourceId = null;
+
+        function showNewVersionModal(songId, title, artist) {
+            newVersionSourceId = songId;
+            const modal = document.createElement('div');
+            modal.id = 'new-version-modal';
+            modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;';
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+            modal.innerHTML = `
+                <div style="background:#16213e;border-radius:12px;padding:24px;max-width:500px;width:90%;">
+                    <h3 style="margin-bottom:16px;">📋 新增版本</h3>
+                    <p style="color:#888;margin-bottom:16px;">
+                        基於歌曲：<strong>${escapeHtml(title)}</strong> - ${escapeHtml(artist)}
+                    </p>
+                    <p style="color:#aaa;font-size:13px;margin-bottom:12px;">
+                        上傳新的 MIDI 檔案作為新版本，系統會自動複製現有的段落結構。
+                    </p>
+                    <div class="upload-area" id="version-upload-area" style="padding:20px;text-align:center;border:2px dashed #444;border-radius:8px;cursor:pointer;margin-bottom:12px;">
+                        <div style="font-size:32px;margin-bottom:8px;">🎹</div>
+                        <p style="color:#888;">選擇 MIDI 檔案</p>
+                        <input type="file" id="version-midi-file" accept=".mid,.midi" style="display:none;">
+                    </div>
+                    <div id="version-file-info" style="color:#666;font-size:14px;margin-bottom:12px;"></div>
+                    <div class="progress-bar" id="version-upload-progress" style="display:none;">
+                        <div class="progress-fill" id="version-progress-fill"></div>
+                    </div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end;">
+                        <button class="btn btn-secondary" onclick="document.getElementById('new-version-modal').remove()">取消</button>
+                        <button class="btn btn-primary" id="create-version-btn" onclick="createNewVersion()" disabled>建立新版本</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            const uploadArea = modal.querySelector('#version-upload-area');
+            const fileInput = modal.querySelector('#version-midi-file');
+            const fileInfo = modal.querySelector('#version-file-info');
+
+            uploadArea.addEventListener('click', () => fileInput.click());
+            uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.style.borderColor = '#4facfe'; });
+            uploadArea.addEventListener('dragleave', () => { uploadArea.style.borderColor = '#444'; });
+            uploadArea.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadArea.style.borderColor = '#444';
+                if (e.dataTransfer.files.length) handleVersionFile(e.dataTransfer.files[0], fileInput, fileInfo);
+            });
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length) handleVersionFile(e.target.files[0], fileInput, fileInfo);
+            });
+        }
+
+        function handleVersionFile(file, fileInput, fileInfo) {
+            const name = file.name.toLowerCase();
+            if (name.endsWith('.mid') || name.endsWith('.midi')) {
+                fileInput._file = file;
+                fileInfo.textContent = `已選擇: ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+                document.getElementById('create-version-btn').disabled = false;
+            } else {
+                fileInfo.textContent = '請選擇 MIDI 檔案';
+                document.getElementById('create-version-btn').disabled = true;
+            }
+        }
+
+        async function createNewVersion() {
+            const modal = document.getElementById('new-version-modal');
+            const fileInput = modal.querySelector('#version-midi-file');
+            const file = fileInput._file;
+            if (!file || !newVersionSourceId) return;
+
+            const progressBar = modal.querySelector('#version-upload-progress');
+            const progressFill = modal.querySelector('#version-progress-fill');
+            const btn = document.getElementById('create-version-btn');
+
+            progressBar.style.display = 'block';
+            btn.disabled = true;
+            btn.textContent = '上傳中...';
+
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 5;
+                if (progress > 90) progress = 90;
+                progressFill.style.width = progress + '%';
+            }, 200);
+
+            try {
+                const result = await api('/songs/' + newVersionSourceId + '/new-version', {
+                    method: 'POST',
+                    body: (() => {
+                        const fd = new FormData();
+                        fd.append('midi_file', file);
+                        return fd;
+                    })(),
+                });
+
+                clearInterval(interval);
+                progressFill.style.width = '100%';
+                setTimeout(() => {
+                    modal.remove();
+                    newVersionSourceId = null;
+                    loadSongs();
+                    alert(`新版本「${result.version_label}」建立成功！段落結構已自動複製。`);
+                }, 500);
+            } catch (err) {
+                clearInterval(interval);
+                progressBar.style.display = 'none';
+                btn.disabled = false;
+                btn.textContent = '建立新版本';
+                alert('建立版本失敗：' + err.message);
+            }
+        }
+
+        async function showVersions(songId, title) {
+            try {
+                const data = await api('/songs/' + songId + '/versions');
+
+                const modal = document.createElement('div');
+                modal.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:1000;';
+                modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+                let html = `
+                    <div style="background:#16213e;border-radius:12px;padding:24px;max-width:600px;width:90%;max-height:80vh;overflow-y:auto;">
+                        <h3 style="margin-bottom:4px;">📜 版本歷史 - ${escapeHtml(title)}</h3>
+                        <p style="color:#888;margin-bottom:16px;font-size:13px;">總共 ${data.versions.length} 個版本</p>
+                        <table style="width:100%;border-collapse:collapse;">
+                            <thead>
+                                <tr style="color:#888;font-size:13px;text-align:left;">
+                                    <th style="padding:8px 4px;border-bottom:1px solid #2a2a4a;">版本</th>
+                                    <th style="padding:8px 4px;border-bottom:1px solid #2a2a4a;">聲軌</th>
+                                    <th style="padding:8px 4px;border-bottom:1px solid #2a2a4a;">上傳時間</th>
+                                    <th style="padding:8px 4px;border-bottom:1px solid #2a2a4a;">狀態</th>
+                                    <th style="padding:8px 4px;border-bottom:1px solid #2a2a4a;">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                `;
+
+                for (const v of data.versions) {
+                    const isActive = v.is_active;
+                    html += `
+                        <tr style="border-bottom:1px solid #1a1a2e;">
+                            <td style="padding:10px 4px;"><strong>${escapeHtml(v.version_label)}</strong></td>
+                            <td style="padding:10px 4px;color:#888;">${v.track_count}</td>
+                            <td style="padding:10px 4px;color:#888;font-size:13px;">${v.created_at}</td>
+                            <td style="padding:10px 4px;">
+                                ${isActive ? '<span style="color:#2ecc71;font-weight:bold;">✓ 當前版本</span>' : '<span style="color:#666;">非活躍</span>'}
+                            </td>
+                            <td style="padding:10px 4px;">
+                                ${isActive ? '' : `<button class="btn btn-sm btn-primary" onclick="setActiveVersion('${v.id}')">🔙 設為當前</button>`}
+                            </td>
+                        </tr>
+                    `;
+                }
+
+                html += `
+                            </tbody>
+                        </table>
+                        <button class="btn btn-secondary" style="margin-top:16px;" onclick="this.closest('div[style]').parentElement.remove()">關閉</button>
+                    </div>
+                `;
+                modal.innerHTML = html;
+                document.body.appendChild(modal);
+            } catch (err) {
+                alert('載入版本歷史失敗：' + err.message);
+            }
+        }
+
+        async function setActiveVersion(songId) {
+            try {
+                await api('/songs/' + songId + '/set-active', { method: 'PUT' });
+                // Close all modals and refresh
+                document.querySelectorAll('div[style*="position:fixed"]').forEach(m => m.remove());
+                loadSongs();
+                alert('已切換為當前版本！');
+            } catch (err) {
+                alert('切換版本失敗：' + err.message);
             }
         }
 

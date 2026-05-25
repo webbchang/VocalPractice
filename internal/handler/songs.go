@@ -22,7 +22,7 @@ func NewUserSongsHandler(store *storage.Store, uploadDir string) *UserSongsHandl
 }
 
 func (h *UserSongsHandler) ListSongs(w http.ResponseWriter, r *http.Request) {
-	songs, err := h.store.ListSongs()
+	songs, err := h.store.ListActiveSongs()
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to list songs")
 		return

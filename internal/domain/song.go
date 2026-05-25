@@ -38,6 +38,9 @@ type Song struct {
 	TempoMap        []TempoMapEntry `json:"tempo_map,omitempty"`
 	TicksPerQuarter int             `json:"ticks_per_quarter,omitempty"`
 	CreatedAt       time.Time       `json:"created_at"`
+	VersionGroup    uuid.UUID       `json:"version_group"`
+	IsActive        bool            `json:"is_active"`
+	VersionLabel    string          `json:"version_label"`
 }
 
 func NewSong(title, artist, midiFilePath string, tracks []MIDITrack) *Song {
@@ -48,5 +51,8 @@ func NewSong(title, artist, midiFilePath string, tracks []MIDITrack) *Song {
 		MIDIFilePath: midiFilePath,
 		Tracks:       tracks,
 		CreatedAt:    time.Now(),
+		VersionGroup: uuid.New(),
+		IsActive:     true,
+		VersionLabel: "v1",
 	}
 }

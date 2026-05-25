@@ -115,5 +115,44 @@ export const SongService={
             headers: { 'Content-Type': 'text/csv' },
             body: csvText
         });
+    },
+
+    // --- 版本管理 ---
+
+    /** 上傳 MIDI 建立新歌曲（可帶 source_song_id 做為新增版本） */
+    uploadSong(title, artist, file, sourceSongId = null) {
+        const formData = new FormData();
+        formData.append('title', title);
+        formData.append('artist', artist);
+        formData.append('midi_file', file);
+        if (sourceSongId) {
+            formData.append('source_song_id', sourceSongId);
+        }
+        return this._request('/songs', {
+            method: 'POST',
+            body: formData,
+        });
+    },
+
+    /** 上傳新版本 MIDI（基於現有歌曲） */
+    createNewVersion(songId, file) {
+        const formData = new FormData();
+        formData.append('midi_file', file);
+        return this._request(`/admin/songs/${songId}/new-version`, {
+            method: 'POST',
+            body: formData,
+        });
+    },
+
+    /** 設為活躍版本（user 看到的就是這個版本） */
+    setActiveVersion(songId) {
+        return this._request(`/admin/songs/${songId}/set-active`, {
+            method: 'PUT',
+        });
+    },
+
+    /** 取得同一首歌的所有版本 */
+    getVersions(songId) {
+        return this._request(`/admin/songs/${songId}/versions`);
     }
 }
