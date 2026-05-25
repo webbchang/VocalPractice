@@ -47,15 +47,25 @@ func TestCreateDuplicateUserEmail(t *testing.T) {
 
 func TestListUsers(t *testing.T) {
 	s := New()
-	s.CreateUser(domain.NewUser("a", "a@test.com", "h"))
-	s.CreateUser(domain.NewUser("b", "b@test.com", "h"))
+	u1 := domain.NewUser("a", "a@test.com", "h")
+	u2 := domain.NewUser("b", "b@test.com", "h")
+	s.CreateUser(u1)
+	s.CreateUser(u2)
 
 	users, err := s.ListUsers()
 	if err != nil {
 		t.Fatalf("ListUsers failed: %v", err)
 	}
-	if len(users) != 2 {
-		t.Errorf("expected 2 users, got %d", len(users))
+
+	found := make(map[uuid.UUID]bool)
+	for _, u := range users {
+		found[u.ID] = true
+	}
+	if !found[u1.ID] {
+		t.Errorf("expected user 'a' (id=%s) in list, not found", u1.ID)
+	}
+	if !found[u2.ID] {
+		t.Errorf("expected user 'b' (id=%s) in list, not found", u2.ID)
 	}
 }
 
