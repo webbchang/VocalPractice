@@ -13,11 +13,11 @@ import (
 )
 
 type UserSongsHandler struct {
-	store     *storage.Store
+	store     storage.Store
 	uploadDir string
 }
 
-func NewUserSongsHandler(store *storage.Store, uploadDir string) *UserSongsHandler {
+func NewUserSongsHandler(store storage.Store, uploadDir string) *UserSongsHandler {
 	return &UserSongsHandler{store: store, uploadDir: uploadDir}
 }
 

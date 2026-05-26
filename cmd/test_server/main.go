@@ -1,8 +1,7 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -17,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -38,7 +38,25 @@ func main() {
 		log.Fatalf("failed to create upload directory: %v", err)
 	}
 
-	store := storage.New()
+	// Initialize store: PostgreSQL or in-memory
+	databaseURL := os.Getenv("TEST_DATABASE_URL")
+	if databaseURL == "" {
+		databaseURL = os.Getenv("DATABASE_URL")
+	}
+	var store storage.Store
+	if databaseURL != "" {
+		pgStore, err := storage.NewPostgresStore(databaseURL)
+		if err != nil {
+			log.Fatalf("failed to connect to database: %v", err)
+		}
+		defer pgStore.Close()
+		store = pgStore
+		log.Printf("Using PostgreSQL store: %s", databaseURL)
+	} else {
+		store = storage.NewMemoryStore()
+		log.Println("DATABASE_URL not set, using in-memory store")
+	}
+
 	midiParser := service.NewMIDIParser()
 
 	seedTestData(store, midiParser, absUploadDir)
@@ -64,6 +82,9 @@ func main() {
 	})
 
 	r.Route("/api/v1/admin", func(r chi.Router) {
+		r.Use(authHandler.Middleware)
+		r.Use(authHandler.RequireRole("admin"))
+
 		r.Post("/users", adminUsersHandler.CreateUser)
 		r.Get("/users", adminUsersHandler.ListUsers)
 		r.Put("/users/{user_id}/toggle-active", adminUsersHandler.ToggleUserActive)
@@ -91,21 +112,20 @@ func main() {
 	r.Post("/api/v1/auth/login", authHandler.Login)
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(authHandler.Middleware)
+
 		r.Get("/songs", userSongsHandler.ListSongs)
 		r.Get("/songs/{song_id}", userSongsHandler.GetSong)
 		r.Get("/songs/{song_id}/midi", userSongsHandler.DownloadMIDI)
 		r.Get("/songs/{song_id}/structures", userSongsHandler.GetStructures)
 		r.Get("/songs/{song_id}/tracks/{track_id}/audio", trackAudioHandler.ServeTrackAudio)
 
-		r.Group(func(r chi.Router) {
-			r.Use(authHandler.Middleware)
-			r.Post("/assessments/submit", userAssessmentsHandler.Submit)
-			r.Get("/assessments", userAssessmentsHandler.ListMyAssessments)
-			r.Get("/assessments/stats", userAssessmentsHandler.GetStats)
-			r.Get("/assessments/{assessment_id}", userAssessmentsHandler.GetAssessment)
-			r.Get("/assessments/{assessment_id}/download", userAssessmentsHandler.Download)
-			r.Delete("/assessments/{assessment_id}", userAssessmentsHandler.Delete)
-		})
+		r.Post("/assessments/submit", userAssessmentsHandler.Submit)
+		r.Get("/assessments", userAssessmentsHandler.ListMyAssessments)
+		r.Get("/assessments/stats", userAssessmentsHandler.GetStats)
+		r.Get("/assessments/{assessment_id}", userAssessmentsHandler.GetAssessment)
+		r.Get("/assessments/{assessment_id}/download", userAssessmentsHandler.Download)
+		r.Delete("/assessments/{assessment_id}", userAssessmentsHandler.Delete)
 	})
 
 	workDir, _ := os.Getwd()
@@ -117,14 +137,41 @@ func main() {
 	log.Fatal(http.ListenAndServe(port, r))
 }
 
-func seedTestData(store *storage.Store, midiParser *service.MIDIParser, uploadDir string) {
-	user := domain.NewUser("webbchang", "webbchang@gmail.com", hashPassword("test1234"))
-	if err := store.CreateUser(user); err != nil {
-		log.Printf("[seed] create user skipped: %v", err)
+func seedTestData(store storage.Store, midiParser *service.MIDIParser, uploadDir string) {
+	// Admin: admin / admin@localhost / a1d2m3i4n
+	adminPwd, _ := bcrypt.GenerateFromPassword([]byte("a1d2m3i4n"), bcrypt.DefaultCost)
+	admin := domain.NewUser("admin", "admin@localhost", string(adminPwd))
+	if err := store.CreateUser(admin); err != nil {
+		// May already exist from MemoryStore seed; update password to bcrypt
+		existing, _ := store.GetUserByEmail("admin@localhost")
+		if existing != nil {
+			existing.PasswordHash = string(adminPwd)
+			store.UpdateUser(existing)
+			log.Printf("[seed] admin password updated to bcrypt")
+		} else {
+			log.Printf("[seed] create admin skipped: %v", err)
+		}
 	} else {
-		log.Printf("[seed] user ready: %s / test1234", user.Email)
+		log.Printf("[seed] admin ready: admin@localhost / a1d2m3i4n")
 	}
 
+	// User: webb / webbchang@gmail.com / test1234
+	userPwd, _ := bcrypt.GenerateFromPassword([]byte("test1234"), bcrypt.DefaultCost)
+	user := domain.NewUser("webb", "webbchang@gmail.com", string(userPwd))
+	if err := store.CreateUser(user); err != nil {
+		existing, _ := store.GetUserByEmail("webbchang@gmail.com")
+		if existing != nil {
+			existing.PasswordHash = string(userPwd)
+			store.UpdateUser(existing)
+			log.Printf("[seed] user password updated to bcrypt")
+		} else {
+			log.Printf("[seed] create user skipped: %v", err)
+		}
+	} else {
+		log.Printf("[seed] user ready: webbchang@gmail.com / test1234")
+	}
+
+	// Load reference2.MID
 	midiCandidates := []string{
 		"test_data/reference2.MID",
 		"test_data/reference2.mid",
@@ -156,6 +203,14 @@ func seedTestData(store *storage.Store, midiParser *service.MIDIParser, uploadDi
 		}
 
 		log.Printf("[seed] song ready: %s - %s (%s)", song.Title, song.Artist, midiPath)
+
+		// Print track names for debugging
+		var trackNames []string
+		for _, t := range song.Tracks {
+			trackNames = append(trackNames, t.Name)
+		}
+		trackNamesJSON, _ := json.Marshal(trackNames)
+		log.Printf("[seed] tracks: %s", string(trackNamesJSON))
 
 		// Find Tenor 2 track to bind structures to it
 		var tenor2TrackID *uuid.UUID
@@ -219,11 +274,6 @@ func seedTestData(store *storage.Store, midiParser *service.MIDIParser, uploadDi
 	}
 
 	log.Printf("[seed] reference2.MID not found, you can upload later via POST /api/v1/admin/songs")
-}
-
-func hashPassword(password string) string {
-	h := sha256.Sum256([]byte(password))
-	return base64.RawURLEncoding.EncodeToString(h[:])
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

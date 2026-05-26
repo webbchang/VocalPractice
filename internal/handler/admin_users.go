@@ -12,10 +12,10 @@ import (
 )
 
 type AdminUsersHandler struct {
-	store *storage.Store
+	store storage.Store
 }
 
-func NewAdminUsersHandler(store *storage.Store) *AdminUsersHandler {
+func NewAdminUsersHandler(store storage.Store) *AdminUsersHandler {
 	return &AdminUsersHandler{store: store}
 }
 

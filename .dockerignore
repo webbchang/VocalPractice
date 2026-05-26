@@ -1,0 +1,45 @@
+# Git
+.git/
+.gitignore
+
+# Go binary artifacts
+server
+main
+test_server
+midi_inspect
+vocalpractice_app
+*.exe
+*.bin
+
+# Node
+node_modules/
+package-lock.json
+package.json
+vitest.config.js
+
+# Uploads (runtime data, not for image)
+uploads/
+uploads_test/
+
+# Test data
+test_data/
+output/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Snapshots & docs
+snapshot/
+README.md
+Vocal Practice App.md
+
+# Archived
+js/__archived__/
+
+# Go source only needed for build, but we copy all source in builder stage
+# Exclude backup files
+*.bak
+*.go.bak

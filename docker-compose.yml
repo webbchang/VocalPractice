@@ -1,0 +1,47 @@
+version: "3.9"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      - JWT_SECRET=${JWT_SECRET:-change-me-to-a-real-secret}
+      # Uncomment the line below to use PostgreSQL instead of in-memory store
+      # - DATABASE_URL=postgres://vocaluser:vocalpass@db:5432/vocalpractice
+      - UPLOAD_DIR=/app/uploads
+    volumes:
+      - uploads_data:/app/uploads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    # Uncomment the lines below to use PostgreSQL
+    # depends_on:
+    #   db:
+    #     condition: service_healthy
+
+  # Uncomment the section below to use PostgreSQL
+  # db:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     - POSTGRES_DB=vocalpractice
+  #     - POSTGRES_USER=vocaluser
+  #     - POSTGRES_PASSWORD=vocalpass
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U vocaluser -d vocalpractice"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   restart: unless-stopped
+
+volumes:
+  uploads_data:
+  # postgres_data:

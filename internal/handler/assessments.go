@@ -13,10 +13,10 @@ import (
 )
 
 type UserAssessmentsHandler struct {
-	store *storage.Store
+	store storage.Store
 }
 
-func NewUserAssessmentsHandler(store *storage.Store) *UserAssessmentsHandler {
+func NewUserAssessmentsHandler(store storage.Store) *UserAssessmentsHandler {
 	return &UserAssessmentsHandler{store: store}
 }
 
@@ -237,10 +237,10 @@ func (h *UserAssessmentsHandler) Download(w http.ResponseWriter, r *http.Request
 
 // TrackAudioHandler serves audio for specific tracks (stub)
 type TrackAudioHandler struct {
-	store *storage.Store
+	store storage.Store
 }
 
-func NewTrackAudioHandler(store *storage.Store) *TrackAudioHandler {
+func NewTrackAudioHandler(store storage.Store) *TrackAudioHandler {
 	return &TrackAudioHandler{store: store}
 }
 

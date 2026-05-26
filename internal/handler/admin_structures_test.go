@@ -27,7 +27,7 @@ func setupStructuresTestRouter(h *AdminStructuresHandler) *chi.Mux {
 	return r
 }
 
-func createSongForStructureTest(t *testing.T, store *storage.Store) *domain.Song {
+func createSongForStructureTest(t *testing.T, store storage.Store) *domain.Song {
 	t.Helper()
 	song := domain.NewSong("t", "a", "", nil)
 	if err := store.CreateSong(song); err != nil {
@@ -36,7 +36,7 @@ func createSongForStructureTest(t *testing.T, store *storage.Store) *domain.Song
 	return song
 }
 
-func createSongWithTracks(t *testing.T, store *storage.Store) *domain.Song {
+func createSongWithTracks(t *testing.T, store storage.Store) *domain.Song {
 	t.Helper()
 	track1 := domain.MIDITrack{ID: uuid.New(), Name: "Lead Vocal", IsVocal: true, MIDIIndex: 0}
 	track2 := domain.MIDITrack{ID: uuid.New(), Name: "Piano", IsVocal: false, MIDIIndex: 1}
@@ -48,7 +48,7 @@ func createSongWithTracks(t *testing.T, store *storage.Store) *domain.Song {
 }
 
 func TestUpdatePhraseRejectWhenTickOutOfParentRange(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -76,7 +76,7 @@ func TestUpdatePhraseRejectWhenTickOutOfParentRange(t *testing.T) {
 }
 
 func TestUpdateSectionToPhraseWithParentSuccess(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -115,7 +115,7 @@ func TestUpdateSectionToPhraseWithParentSuccess(t *testing.T) {
 }
 
 func TestUpdatePhraseAcceptWhenTickEqualsParentBoundaries(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -143,7 +143,7 @@ func TestUpdatePhraseAcceptWhenTickEqualsParentBoundaries(t *testing.T) {
 }
 
 func TestUpdatePhraseToSectionClearsParent(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -180,7 +180,7 @@ func TestUpdatePhraseToSectionClearsParent(t *testing.T) {
 }
 
 func TestCopySectionPhrasesSuccess(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -236,7 +236,7 @@ func TestCopySectionPhrasesSuccess(t *testing.T) {
 // --- Export tests ---
 
 func TestExportStructures_Empty(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -264,7 +264,7 @@ func TestExportStructures_Empty(t *testing.T) {
 }
 
 func TestExportStructures_WithSectionsAndPhrases(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -303,7 +303,7 @@ func TestExportStructures_WithSectionsAndPhrases(t *testing.T) {
 }
 
 func TestExportStructures_WithTrackName(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongWithTracks(t, store)
@@ -339,7 +339,7 @@ func TestExportStructures_WithTrackName(t *testing.T) {
 }
 
 func TestExportStructures_SongNotFound(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 
@@ -356,7 +356,7 @@ func TestExportStructures_SongNotFound(t *testing.T) {
 // --- Import tests ---
 
 func TestImportStructures_Basic(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -391,7 +391,7 @@ func TestImportStructures_Basic(t *testing.T) {
 }
 
 func TestImportStructures_WithTrackName(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongWithTracks(t, store)
@@ -421,7 +421,7 @@ func TestImportStructures_WithTrackName(t *testing.T) {
 }
 
 func TestImportStructures_WithLyrics(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongWithTracks(t, store)
@@ -463,7 +463,7 @@ func TestImportStructures_WithLyrics(t *testing.T) {
 }
 
 func TestImportStructures_MissingTrack(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongWithTracks(t, store)
@@ -497,7 +497,7 @@ func TestImportStructures_MissingTrack(t *testing.T) {
 }
 
 func TestImportStructures_Conflict(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -535,7 +535,7 @@ func TestImportStructures_Conflict(t *testing.T) {
 }
 
 func TestImportStructures_ForceOverwrite(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -575,7 +575,7 @@ func TestImportStructures_ForceOverwrite(t *testing.T) {
 }
 
 func TestImportStructures_PhraseWithoutSection(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -601,7 +601,7 @@ func TestImportStructures_PhraseWithoutSection(t *testing.T) {
 }
 
 func TestImportStructures_InvalidCSV(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -619,7 +619,7 @@ func TestImportStructures_InvalidCSV(t *testing.T) {
 }
 
 func TestImportStructures_EmptyBody(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 	song := createSongForStructureTest(t, store)
@@ -636,7 +636,7 @@ func TestImportStructures_EmptyBody(t *testing.T) {
 }
 
 func TestImportStructures_SongNotFound(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAdminStructuresHandler(store)
 	r := setupStructuresTestRouter(h)
 

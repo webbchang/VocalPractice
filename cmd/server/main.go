@@ -23,7 +23,7 @@ func main() {
 	}
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
-		jwtSecret = "vocal-practice-app-secret-key-change-in-production"
+		log.Fatal("JWT_SECRET environment variable is required")
 	}
 
 	// Ensure upload directory exists
@@ -35,8 +35,22 @@ func main() {
 		log.Fatalf("failed to create upload directory: %v", err)
 	}
 
-	// Initialize dependencies
-	store := storage.New()
+	// Initialize store: PostgreSQL or in-memory
+	databaseURL := os.Getenv("DATABASE_URL")
+	var store storage.Store
+	if databaseURL != "" {
+		pgStore, err := storage.NewPostgresStore(databaseURL)
+		if err != nil {
+			log.Fatalf("failed to connect to database: %v", err)
+		}
+		defer pgStore.Close()
+		store = pgStore
+		log.Println("Using PostgreSQL store")
+	} else {
+		store = storage.NewMemoryStore()
+		log.Println("DATABASE_URL not set, using in-memory store")
+	}
+
 	midiParser := service.NewMIDIParser()
 
 	// Initialize handlers
@@ -69,12 +83,10 @@ func main() {
 		r.Use(authHandler.Middleware)
 		r.Use(authHandler.RequireRole("admin"))
 
-		// Users
 		r.Post("/users", adminUsersHandler.CreateUser)
 		r.Get("/users", adminUsersHandler.ListUsers)
 		r.Put("/users/{user_id}/toggle-active", adminUsersHandler.ToggleUserActive)
 
-		// Songs (MIDI upload)
 		r.Post("/songs", adminSongsHandler.UploadSong)
 		r.Get("/songs", adminSongsHandler.ListSongs)
 		r.Get("/songs/{song_id}", adminSongsHandler.GetSong)
@@ -84,7 +96,6 @@ func main() {
 		r.Patch("/songs/{song_id}/tracks/{track_id}", adminSongsHandler.UpdateTrack)
 		r.Delete("/songs/{song_id}", adminSongsHandler.DeleteSong)
 
-		// Structures
 		r.Post("/songs/{song_id}/structures", adminStructuresHandler.BulkCreate)
 		r.Get("/songs/{song_id}/structures/export", adminStructuresHandler.ExportStructures)
 		r.Post("/songs/{song_id}/structures/import", adminStructuresHandler.ImportStructures)
@@ -93,7 +104,6 @@ func main() {
 		r.Put("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Update)
 		r.Delete("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Delete)
 
-		// Lyrics
 		r.Post("/songs/{song_id}/lyrics", adminLyricsHandler.BatchUpsert)
 		r.Get("/tracks/{track_id}/lyrics", adminLyricsHandler.GetByTrack)
 		r.Delete("/songs/{song_id}/lyrics", adminLyricsHandler.Delete)
@@ -102,16 +112,14 @@ func main() {
 	// === Auth API ===
 	r.Post("/api/v1/auth/login", authHandler.Login)
 
-	// === User API (protected) ===
+	// === User API ===
 	r.Route("/api/v1", func(r chi.Router) {
-		// Public endpoints
 		r.Get("/songs", userSongsHandler.ListSongs)
 		r.Get("/songs/{song_id}", userSongsHandler.GetSong)
 		r.Get("/songs/{song_id}/midi", userSongsHandler.DownloadMIDI)
 		r.Get("/songs/{song_id}/structures", userSongsHandler.GetStructures)
 		r.Get("/songs/{song_id}/tracks/{track_id}/audio", trackAudioHandler.ServeTrackAudio)
 
-		// Protected endpoints
 		r.Group(func(r chi.Router) {
 			r.Use(authHandler.Middleware)
 			r.Post("/assessments/submit", userAssessmentsHandler.Submit)

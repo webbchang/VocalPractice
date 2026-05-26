@@ -9,7 +9,7 @@ import (
 )
 
 func TestCreateAndGetUser(t *testing.T) {
-	s := New()
+	s := NewMemoryStore()
 	user := domain.NewUser("testuser", "test@example.com", "hash123")
 	if err := s.CreateUser(user); err != nil {
 		t.Fatalf("CreateUser failed: %v", err)
@@ -33,7 +33,7 @@ func TestCreateAndGetUser(t *testing.T) {
 }
 
 func TestCreateDuplicateUserEmail(t *testing.T) {
-	s := New()
+	s := NewMemoryStore()
 	user1 := domain.NewUser("user1", "same@example.com", "hash1")
 	user2 := domain.NewUser("user2", "same@example.com", "hash2")
 
@@ -46,7 +46,7 @@ func TestCreateDuplicateUserEmail(t *testing.T) {
 }
 
 func TestListUsers(t *testing.T) {
-	s := New()
+	s := NewMemoryStore()
 	u1 := domain.NewUser("a", "a@test.com", "h")
 	u2 := domain.NewUser("b", "b@test.com", "h")
 	s.CreateUser(u1)
@@ -70,7 +70,7 @@ func TestListUsers(t *testing.T) {
 }
 
 func TestCreateAndGetSong(t *testing.T) {
-	s := New()
+	s := NewMemoryStore()
 	tracks := []domain.MIDITrack{
 		{
 			ID:         uuid.New(),
@@ -101,7 +101,7 @@ func TestCreateAndGetSong(t *testing.T) {
 }
 
 func TestListSongs(t *testing.T) {
-	s := New()
+	s := NewMemoryStore()
 	s.CreateSong(domain.NewSong("S1", "A1", "/p1", nil))
 	s.CreateSong(domain.NewSong("S2", "A2", "/p2", nil))
 
@@ -115,7 +115,7 @@ func TestListSongs(t *testing.T) {
 }
 
 func TestStructureCRUD(t *testing.T) {
-	s := New()
+	s := NewMemoryStore()
 	songID := uuid.New()
 
 	section := domain.NewSongStructure(songID, nil, nil, domain.StructureTypeSECTION, "Verse", 0, 30, 0, 480, 1)
@@ -176,7 +176,7 @@ func TestStructureCRUD(t *testing.T) {
 }
 
 func TestTrackLyricsCRUD(t *testing.T) {
-	s := New()
+	s := NewMemoryStore()
 	trackID := uuid.New()
 	structID := uuid.New()
 
@@ -254,7 +254,7 @@ func TestTrackLyricsCRUD(t *testing.T) {
 }
 
 func TestBuildStructureTreePhraseSortedByTime(t *testing.T) {
-	s := New()
+	s := NewMemoryStore()
 	songID := uuid.New()
 	section := domain.NewSongStructure(songID, nil, nil, domain.StructureTypeSECTION, "Verse", 0, 30, 0, 480, 1)
 
@@ -285,7 +285,7 @@ func TestBuildStructureTreePhraseSortedByTime(t *testing.T) {
 }
 
 func TestAssessmentCRUD(t *testing.T) {
-	s := New()
+	s := NewMemoryStore()
 	userID := uuid.New()
 	songID := uuid.New()
 	trackID := uuid.New()

@@ -12,10 +12,10 @@ import (
 )
 
 type AdminLyricsHandler struct {
-	store *storage.Store
+	store storage.Store
 }
 
-func NewAdminLyricsHandler(store *storage.Store) *AdminLyricsHandler {
+func NewAdminLyricsHandler(store storage.Store) *AdminLyricsHandler {
 	return &AdminLyricsHandler{store: store}
 }
 

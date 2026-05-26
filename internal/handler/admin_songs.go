@@ -16,12 +16,12 @@ import (
 )
 
 type AdminSongsHandler struct {
-	store      *storage.Store
+	store      storage.Store
 	midiParser *service.MIDIParser
 	uploadDir  string
 }
 
-func NewAdminSongsHandler(store *storage.Store, midiParser *service.MIDIParser, uploadDir string) *AdminSongsHandler {
+func NewAdminSongsHandler(store storage.Store, midiParser *service.MIDIParser, uploadDir string) *AdminSongsHandler {
 	os.MkdirAll(uploadDir, 0755)
 	return &AdminSongsHandler{
 		store:      store,
@@ -463,7 +463,7 @@ func nextVersionLabel(current string) string {
 }
 
 // copyStructuresInternal copies all structures + lyrics from source to target song
-func copyStructuresInternal(store *storage.Store, sourceSongID, targetSongID uuid.UUID) {
+func copyStructuresInternal(store storage.Store, sourceSongID, targetSongID uuid.UUID) {
 	sourceSong, err := store.GetSongByID(sourceSongID)
 	if err != nil {
 		return

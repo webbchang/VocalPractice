@@ -40,7 +40,7 @@ var adminID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 var testUserID = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 
 func TestMiddlewareRejectsMissingAuthHeader(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 	r := setupAuthTestRouter(h, "")
 
@@ -62,7 +62,7 @@ func TestMiddlewareRejectsMissingAuthHeader(t *testing.T) {
 }
 
 func TestMiddlewareRejectsInvalidAuthFormat(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 	r := setupAuthTestRouter(h, "")
 
@@ -77,7 +77,7 @@ func TestMiddlewareRejectsInvalidAuthFormat(t *testing.T) {
 }
 
 func TestMiddlewareRejectsBadTokenSignature(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 	r := setupAuthTestRouter(h, "")
 
@@ -93,7 +93,7 @@ func TestMiddlewareRejectsBadTokenSignature(t *testing.T) {
 }
 
 func TestMiddlewareRejectsNonexistentUser(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 	r := setupAuthTestRouter(h, "")
 
@@ -115,7 +115,7 @@ func TestMiddlewareRejectsNonexistentUser(t *testing.T) {
 }
 
 func TestMiddlewareAllowsValidUser(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 	r := setupAuthTestRouter(h, "")
 
@@ -146,7 +146,7 @@ func TestMiddlewareAllowsValidUser(t *testing.T) {
 }
 
 func TestRequireRoleAcceptsAdmin(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 	r := setupAuthTestRouter(h, "admin")
 
@@ -166,7 +166,7 @@ func TestRequireRoleAcceptsAdmin(t *testing.T) {
 }
 
 func TestRequireRoleRejectsUser(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 	r := setupAuthTestRouter(h, "admin")
 
@@ -194,7 +194,7 @@ func TestRequireRoleRejectsUser(t *testing.T) {
 }
 
 func TestRequireRoleAcceptsMultipleRoles(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 
 	// Custom router with multiple allowed roles
@@ -223,7 +223,7 @@ func TestRequireRoleAcceptsMultipleRoles(t *testing.T) {
 }
 
 func TestRequireRoleRejectsWhenNoRoleInContext(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 
 	// Router that applies RequireRole without Middleware (no role set)
@@ -246,7 +246,7 @@ func TestRequireRoleRejectsWhenNoRoleInContext(t *testing.T) {
 }
 
 func TestMiddlewareAndRequireRoleFullChain(t *testing.T) {
-	store := storage.New()
+	store := storage.NewMemoryStore()
 	h := NewAuthHandler(store, "test-secret")
 
 	testCases := []struct {

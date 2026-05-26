@@ -16,10 +16,10 @@ import (
 )
 
 type AdminStructuresHandler struct {
-	store *storage.Store
+	store storage.Store
 }
 
-func NewAdminStructuresHandler(store *storage.Store) *AdminStructuresHandler {
+func NewAdminStructuresHandler(store storage.Store) *AdminStructuresHandler {
 	return &AdminStructuresHandler{store: store}
 }
 
@@ -194,7 +194,7 @@ func isStructureWithin(childStartTick, childEndTick int, childStartTime, childEn
 	return childStartTime >= parent.StartTime && childEndTime <= parent.EndTime
 }
 
-func findContainingSectionByTick(store *storage.Store, songID uuid.UUID, startTick, endTick int, excludeID *uuid.UUID) (*domain.SongStructure, error) {
+func findContainingSectionByTick(store storage.Store, songID uuid.UUID, startTick, endTick int, excludeID *uuid.UUID) (*domain.SongStructure, error) {
 	all, err := store.ListStructuresBySong(songID)
 	if err != nil {
 		return nil, err
@@ -714,7 +714,7 @@ func timesOverlap(s1, e1, s2, e2 float64) bool {
 }
 
 // deleteAllLyricsByStructure removes all TrackLyrics entries for a given structure ID.
-func deleteAllLyricsByStructure(store *storage.Store, structureID uuid.UUID) {
+func deleteAllLyricsByStructure(store storage.Store, structureID uuid.UUID) {
 	// List all lyrics by song is the best we can do without direct method;
 	// we find all lyrics entries with this structureID by attempting to list all.
 	// Since the store uses "trackID:structureID" keys, we need a song-aware approach.

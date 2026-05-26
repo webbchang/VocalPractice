@@ -14,14 +14,15 @@ import (
 	"vocal-practice-app/internal/storage"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthHandler struct {
-	store     *storage.Store
+	store     storage.Store
 	jwtSecret string
 }
 
-func NewAuthHandler(store *storage.Store, jwtSecret string) *AuthHandler {
+func NewAuthHandler(store storage.Store, jwtSecret string) *AuthHandler {
 	return &AuthHandler{store: store, jwtSecret: jwtSecret}
 }
 
@@ -61,11 +62,14 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Simple password verification using SHA256 (use bcrypt in production)
-	expectedHash := hashPassword(req.Password)
-	if user.PasswordHash != expectedHash {
-		respondError(w, http.StatusUnauthorized, "invalid credentials")
-		return
+	// Verify password: try bcrypt first, fall back to SHA256
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		// Fallback: SHA256 (for seeded dev users)
+		expectedHash := hashPasswordSHA256(req.Password)
+		if user.PasswordHash != expectedHash {
+			respondError(w, http.StatusUnauthorized, "invalid credentials")
+			return
+		}
 	}
 
 	token, err := h.generateToken(user.ID, user.Email)
@@ -153,7 +157,6 @@ func (h *AuthHandler) generateToken(userID uuid.UUID, email string) (string, err
 		[]byte(`{"sub":"` + userID.String() + `","email":"` + email + `","exp":` + exp + `}`),
 	)
 
-	// Simple token for demo
 	mac := hmac.New(sha256.New, []byte(h.jwtSecret))
 	mac.Write([]byte(header + "." + payload))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
@@ -175,7 +178,6 @@ func (h *AuthHandler) validateToken(token string) (uuid.UUID, error) {
 		return uuid.Nil, ErrInvalidToken
 	}
 
-	// Decode payload to get user ID
 	payloadBytes, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
 		return uuid.Nil, ErrInvalidToken
@@ -191,7 +193,18 @@ func (h *AuthHandler) validateToken(token string) (uuid.UUID, error) {
 	return uuid.Parse(claims.Sub)
 }
 
+// hashPassword creates a bcrypt hash. Used for new user registration.
 func hashPassword(password string) string {
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		// Fallback to SHA256 if bcrypt fails
+		return hashPasswordSHA256(password)
+	}
+	return string(hash)
+}
+
+// hashPasswordSHA256 creates a SHA256 hash (for backwards compatibility).
+func hashPasswordSHA256(password string) string {
 	h := sha256.Sum256([]byte(password))
 	return base64.RawURLEncoding.EncodeToString(h[:])
 }
