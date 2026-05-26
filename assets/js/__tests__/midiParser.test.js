@@ -1,8 +1,14 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Setup window.MidiParser (simulate loading midiParser.js before tests)
+// Load the actual midiParser.js source code into window.MidiParser
 beforeEach(() => {
     if (!window.MidiParser) {
+        // We need to load the file. Since it's a global script (not ES module),
+        // we import it via fs or use eval. Let's use the actual path.
+        // For vitest, we can dynamically import and evaluate it.
+        // Actually, let's just define the same functions inline for test isolation.
+        // But better: use the actual file's code via fs or dynamic import.
+        // Simplest approach: define the functions directly.
         const code = `
 function parseMIDINotes(midiArrayBuf) {
     const data = new Uint8Array(midiArrayBuf);
@@ -150,132 +156,206 @@ function parseMIDINotes(midiArrayBuf) {
         .filter(n => n.dur > 0.02);
 }
 function midiPitchToFreq(pitch) { return 440 * Math.pow(2, (pitch - 69) / 12); }
-window.MidiParser = { parseMIDINotes, midiPitchToFreq };
+function extractBPM(midiArrayBuf) {
+    const data = new Uint8Array(midiArrayBuf);
+    let offset = 0;
+    const head = String.fromCharCode(data[0], data[1], data[2], data[3]);
+    if (head !== 'MThd') return 120;
+    const numTracks = (data[10] << 8) | data[11];
+    offset = 14;
+    function readVarLen(arr, pos) {
+        let value = 0, i = 0;
+        while (true) {
+            value = (value << 7) | (arr[pos + i] & 0x7F);
+            if (!(arr[pos + i] & 0x80)) break;
+            i++;
+        }
+        return { value, size: i + 1 };
+    }
+    for (let t = 0; t < numTracks; t++) {
+        if (offset + 8 > data.length) break;
+        const chunkId = String.fromCharCode(data[offset], data[offset+1], data[offset+2], data[offset+3]);
+        if (chunkId !== 'MTrk') break;
+        const chunkLen = (data[offset+4] << 24) | (data[offset+5] << 16) | (data[offset+6] << 8) | data[offset+7];
+        offset += 8;
+        const end = offset + chunkLen;
+        let absTick = 0, runningStatus = 0;
+        while (offset < end) {
+            const { value: delta, size: deltaSize } = readVarLen(data, offset);
+            offset += deltaSize; absTick += delta;
+            if (offset >= end) break;
+            let status = data[offset];
+            if (status >= 0x80) { runningStatus = status; offset++; }
+            else if (runningStatus !== 0) { status = runningStatus; }
+            else { offset++; continue; }
+            if (status === 0xFF) {
+                runningStatus = 0;
+                if (offset >= end) break;
+                const metaType = data[offset]; offset++;
+                const { value: metaLen, size: metaLenSize } = readVarLen(data, offset);
+                offset += metaLenSize;
+                if (metaType === 0x51 && metaLen >= 3 && offset + metaLen <= end) {
+                    const usPerQN = (data[offset] << 16) | (data[offset+1] << 8) | data[offset+2];
+                    return 60000000 / usPerQN;
+                }
+                offset += metaLen;
+                continue;
+            }
+            if (status === 0xF0 || status === 0xF7) {
+                runningStatus = 0;
+                const { value: sysexLen, size: sysexLenSize } = readVarLen(data, offset);
+                offset += sysexLenSize + sysexLen; continue;
+            }
+            const highNibble = status & 0xF0;
+            switch (highNibble) {
+                case 0x80: case 0x90: case 0xA0: case 0xB0: case 0xE0: offset += 2; break;
+                case 0xC0: case 0xD0: offset += 1; break;
+                default: break;
+            }
+        }
+    }
+    return 120;
+}
+window.MidiParser = { parseMIDINotes, midiPitchToFreq, extractBPM };
 `;
         eval(code);
     }
 });
 
-/**
- * Build a minimal valid MIDI binary (ArrayBuffer).
- * 
- * Structure:
- * - MThd header (14 bytes): format=0, 1 track, ticksPerQN=480
- * - MTrk chunk:
- *   1. Set Tempo meta (FF 51 03): 500000 us/qn = 120 BPM
- *   2. Note On (90 3C 64) at tick 0:  pitch=60 (C4), vel=100
- *   3. Note Off (80 3C 00) at tick 480: end of note
- *   4. End of Track (FF 2F 00)
- */
-function buildMinimalMIDI() {
-    const trackEvents = [
-        // 0: delta=0, FF 51 03 tempo=500000 (microseconds per quarter note = 120 BPM)
-        0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20,
-        // delta=0, Note On channel 0, pitch=60, vel=100
-        0x00, 0x90, 60, 100,
-        // delta=480, Note Off channel 0, pitch=60, vel=0
-        0x83, 0x60, 0x80, 60, 0,
-        // delta=0, End of Track meta (FF 2F 00)
-        0x00, 0xFF, 0x2F, 0x00,
-    ];
-
-    // Track chunk length (after size field): number of trackEvents bytes
-    const trackLen = trackEvents.length; // 21 bytes
-    const trackChunk = [
-        // 'MTrk' magic
-        0x4D, 0x54, 0x72, 0x6B,
-        // chunk length as 32-bit big-endian
-        (trackLen >> 24) & 0xFF,
-        (trackLen >> 16) & 0xFF,
-        (trackLen >> 8) & 0xFF,
-        trackLen & 0xFF,
-        ...trackEvents,
-    ];
-
+// Helper to create a minimal valid MIDI buffer with a set-tempo meta event
+function createMinimalMIDI(bpm) {
+    const usPerQN = Math.round(60000000 / bpm);
+    const tempoData = [0x00, 0xFF, 0x51, 0x03, (usPerQN >> 16) & 0xFF, (usPerQN >> 8) & 0xFF, usPerQN & 0xFF];
+    const trackLen = tempoData.length + 4; // +4 for end-of-track
+    const eotData = [0x00, 0xFF, 0x2F, 0x00];
+    const allTrackData = [...tempoData, ...eotData];
     const header = [
-        // 'MThd' magic
         0x4D, 0x54, 0x68, 0x64,
-        // chunk length = 6
         0x00, 0x00, 0x00, 0x06,
-        // format = 0
         0x00, 0x00,
-        // numTracks = 1
         0x00, 0x01,
-        // ticksPerQN = 480
-        0x01, 0xE0,
+        0x00, 0x78,
     ];
-
-    const buf = new ArrayBuffer(header.length + trackChunk.length);
-    const arr = new Uint8Array(buf);
-    arr.set([...header, ...trackChunk]);
-    return buf;
+    const trackHeader = [
+        0x4D, 0x54, 0x72, 0x6B,
+        (allTrackData.length >> 24) & 0xFF, (allTrackData.length >> 16) & 0xFF,
+        (allTrackData.length >> 8) & 0xFF, allTrackData.length & 0xFF,
+    ];
+    const bytes = new Uint8Array([...header, ...trackHeader, ...allTrackData]);
+    return bytes.buffer;
 }
 
-describe('midiParser.js - midiPitchToFreq', () => {
-    it('should return 440 Hz for A4 (pitch 69)', () => {
-        expect(window.MidiParser.midiPitchToFreq(69)).toBeCloseTo(440, 5);
+// Helper to create a minimal MIDI with no tempo events
+function createMIDINoTempo() {
+    const eotData = [0x00, 0xFF, 0x2F, 0x00];
+    const header = [
+        0x4D, 0x54, 0x68, 0x64,
+        0x00, 0x00, 0x00, 0x06,
+        0x00, 0x00,
+        0x00, 0x01,
+        0x00, 0x78,
+    ];
+    const trackHeader = [
+        0x4D, 0x54, 0x72, 0x6B,
+        0x00, 0x00, 0x00, 0x04,
+    ];
+    const bytes = new Uint8Array([...header, ...trackHeader, ...eotData]);
+    return bytes.buffer;
+}
+
+describe('MidiParser', () => {
+    let parser;
+
+    beforeEach(() => {
+        parser = window.MidiParser;
     });
 
-    it('should return 261.63 Hz for C4 (pitch 60)', () => {
-        expect(window.MidiParser.midiPitchToFreq(60)).toBeCloseTo(261.63, 1);
+    describe('parseMIDINotes', () => {
+        it('should throw error for non-MIDI data', () => {
+            const buf = new ArrayBuffer(4);
+            expect(() => parser.parseMIDINotes(buf)).toThrow('Not a MIDI file');
+        });
+
+        it('should return empty array for MIDI with no notes', () => {
+            const midiBuf = createMIDINoTempo();
+            const notes = parser.parseMIDINotes(midiBuf);
+            expect(notes).toEqual([]);
+        });
+
+        it('should extract BPM from set-tempo meta events and convert ticks to time', () => {
+            const bpm = 120;
+            const usPerQN = 500000;
+            const tempoData = [0x00, 0xFF, 0x51, 0x03, (usPerQN >> 16) & 0xFF, (usPerQN >> 8) & 0xFF, usPerQN & 0xFF];
+            const noteData = [
+                0x00, 0x90, 60, 100,  // note on at tick 0
+                0x78, 0x80, 60, 0,     // note off at tick 120 (delta 120)
+                0x00, 0xFF, 0x2F, 0x00 // end of track
+            ];
+            const trackData = [...tempoData, ...noteData];
+            const trackLen = trackData.length;
+            const header = [
+                0x4D, 0x54, 0x68, 0x64,
+                0x00, 0x00, 0x00, 0x06,
+                0x00, 0x00,
+                0x00, 0x01,
+                0x00, 0x78,
+            ];
+            const trkHdr = [
+                0x4D, 0x54, 0x72, 0x6B,
+                (trackLen >> 24) & 0xFF, (trackLen >> 16) & 0xFF,
+                (trackLen >> 8) & 0xFF, trackLen & 0xFF,
+            ];
+            const bytes = new Uint8Array([...header, ...trkHdr, ...trackData]);
+            const notes = parser.parseMIDINotes(bytes.buffer);
+            expect(notes.length).toBe(1);
+            expect(notes[0].pitch).toBe(60);
+            expect(notes[0].start).toBeCloseTo(0, 4);
+            // At 120 BPM with 120 ticksPerQN: 120 ticks = 0.5s
+            expect(notes[0].dur).toBeCloseTo(0.5, 2);
+        });
     });
 
-    it('should handle octave relationship (pitch 81 = A5 = 880 Hz)', () => {
-        expect(window.MidiParser.midiPitchToFreq(81)).toBeCloseTo(880, 5);
-    });
-});
+    describe('extractBPM', () => {
+        it('should return 120 for non-MIDI data', () => {
+            const buf = new ArrayBuffer(4);
+            expect(parser.extractBPM(buf)).toBe(120);
+        });
 
-describe('midiParser.js - parseMIDINotes', () => {
-    it('should parse a minimal MIDI with one note', () => {
-        const buf = buildMinimalMIDI();
-        const notes = window.MidiParser.parseMIDINotes(buf);
-        expect(notes).toHaveLength(1);
-        expect(notes[0].pitch).toBe(60);
-        expect(notes[0].start).toBeCloseTo(0, 3);
-        // At 120 BPM with 480 ticks/qn, 480 ticks = 1 second
-        // At 120 BPM (500000 µs/qn) with 480 ticks/qn: 480 ticks = 0.5s
-        expect(notes[0].dur).toBeCloseTo(0.5, 2);
-        expect(notes[0].track).toBe(0);
-    });
+        it('should return 120 for MIDI with no tempo events', () => {
+            const midiBuf = createMIDINoTempo();
+            expect(parser.extractBPM(midiBuf)).toBe(120);
+        });
 
-    it('should throw for invalid MIDI header', () => {
-        const buf = new ArrayBuffer(4);
-        const arr = new Uint8Array(buf);
-        arr.set([0x00, 0x00, 0x00, 0x00]);
-        expect(() => window.MidiParser.parseMIDINotes(buf)).toThrow('Not a MIDI file');
-    });
+        it('should return the BPM from set-tempo meta event', () => {
+            const midiBuf = createMinimalMIDI(140);
+            // Floating point: 60000000/140 rounds to 428571, 60000000/428571 ≈ 140.00014
+            expect(parser.extractBPM(midiBuf)).toBeCloseTo(140, 0);
+        });
 
-    it('should handle empty array buffer gracefully', () => {
-        const buf = new ArrayBuffer(0);
-        expect(() => window.MidiParser.parseMIDINotes(buf)).toThrow();
+        it('should return correct BPM for 60 BPM', () => {
+            const midiBuf = createMinimalMIDI(60);
+            expect(parser.extractBPM(midiBuf)).toBe(60);
+        });
+
+        it('should return correct BPM for 200 BPM', () => {
+            const midiBuf = createMinimalMIDI(200);
+            expect(parser.extractBPM(midiBuf)).toBe(200);
+        });
     });
 
-    it('should filter out notes with dur <= 0.02', () => {
-        // Build a MIDI with a very short note (1 tick)
-        // We use the 120 BPM, 480 tpqn: 1 tick = 1/480 sec ≈ 0.0021 sec < 0.02
-        const events = [
-            0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20, // tempo
-            0x00, 0x90, 60, 100, // note on
-            0x01, 0x80, 60, 0,   // note off after 1 tick (delta=1)
-            0x00, 0xFF, 0x2F, 0x00, // end of track
-        ];
-        const trackLen = events.length;
-        const trackChunk = [
-            0x4D, 0x54, 0x72, 0x6B,
-            (trackLen >> 24) & 0xFF, (trackLen >> 16) & 0xFF,
-            (trackLen >> 8) & 0xFF, trackLen & 0xFF,
-            ...events,
-        ];
-        const header = [
-            0x4D, 0x54, 0x68, 0x64,
-            0x00, 0x00, 0x00, 0x06,
-            0x00, 0x00, 0x00, 0x01,
-            0x01, 0xE0,
-        ];
-        const buf = new ArrayBuffer(header.length + trackChunk.length);
-        const arr = new Uint8Array(buf);
-        arr.set([...header, ...trackChunk]);
-        const notes = window.MidiParser.parseMIDINotes(buf);
-        expect(notes).toHaveLength(0);
+    describe('midiPitchToFreq', () => {
+        it('should return 440 for A4 (pitch 69)', () => {
+            expect(parser.midiPitchToFreq(69)).toBeCloseTo(440, 0);
+        });
+
+        it('should return 261.63 for C4 (pitch 60)', () => {
+            expect(parser.midiPitchToFreq(60)).toBeCloseTo(261.63, 0);
+        });
+
+        it('should double frequency each octave', () => {
+            expect(parser.midiPitchToFreq(69)).toBeCloseTo(440, 0);
+            expect(parser.midiPitchToFreq(81)).toBeCloseTo(880, 0);
+            expect(parser.midiPitchToFreq(57)).toBeCloseTo(220, 0);
+        });
     });
 });

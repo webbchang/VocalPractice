@@ -8,13 +8,37 @@ let playbackNodes = [];
 let playbackTimer = null;
 let isPlaying = false;
 
-function getAudioCtx() {
+export function getAudioCtx() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     return audioCtx;
 }
 
 function midiPitchToFreq(pitch) {
     return 440 * Math.pow(2, (pitch - 69) / 12);
+}
+
+/**
+ * Schedule metronome beat click sounds on the audio context timeline.
+ * Creates short sine wave clicks (~1000Hz, ~30ms) at the specified times.
+ * @param {AudioContext} ctx - The Web Audio context
+ * @param {number} count - Number of beats to schedule
+ * @param {number} intervalSec - Time between each beat in seconds
+ * @param {number} startTime - Absolute time on the audio context for first beat
+ */
+export function scheduleBeats(ctx, count, intervalSec, startTime) {
+    for (let i = 0; i < count; i++) {
+        const beatTime = startTime + i * intervalSec;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(1000, beatTime);
+        gain.gain.setValueAtTime(0.8, beatTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.03);
+        osc.start(beatTime);
+        osc.stop(beatTime + 0.05);
+    }
 }
 
 export function playRange(startTime, endTime) {
@@ -62,6 +86,63 @@ export function playRange(startTime, endTime) {
         playbackNodes.push(osc, ng);
     }
     playbackTimer = setTimeout(() => { isPlaying = false; updatePlayBtn(); stopPlayback(); }, dur * 1000 + 300);
+    isPlaying = true;
+    updatePlayBtn();
+}
+
+/**
+ * Play a range of notes with a scheduled start delay.
+ * The accompaniment begins at clickTime + startDelay, with notes
+ * scheduled relative to that time.
+ * @param {number} startTime - Range start in seconds (section start)
+ * @param {number} endTime - Range end in seconds
+ * @param {number} startDelay - Delay in seconds before playback begins
+ */
+export function playRangeDelayed(startTime, endTime, startDelay) {
+    const { parsedNotes, parsedTrackIndex, selectedAccompanimentTrackIds, currentSongFull } = state;
+    if (!parsedNotes || parsedNotes.length === 0) return;
+    stopPlayback();
+    const ctx = getAudioCtx();
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = 0.3;
+    gainNode.connect(ctx.destination);
+    const dur = endTime - startTime;
+    const now = ctx.currentTime;
+    const startAt = now + startDelay;
+
+    const accompanimentTrackIndices = selectedAccompanimentTrackIds
+        .map(id => {
+            if (!currentSongFull || !currentSongFull.tracks) return -1;
+            for (const t of currentSongFull.tracks) {
+                if (t.id === id) return t.midi_index;
+            }
+            return -1;
+        })
+        .filter(idx => idx >= 0);
+    const playableTrackIndices = [parsedTrackIndex, ...accompanimentTrackIndices].filter(idx => idx >= 0);
+
+    const rangeNotes = parsedNotes.filter(n =>
+        n.start >= startTime && n.start < endTime &&
+        playableTrackIndices.includes(n.track)
+    );
+
+    for (const n of rangeNotes) {
+        const osc = ctx.createOscillator();
+        const ng = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.value = midiPitchToFreq(n.pitch);
+        const ls = n.start - startTime;
+        const nd = Math.min(n.dur, dur - ls);
+        if (nd <= 0.01) continue;
+        ng.gain.setValueAtTime(0, startAt + ls);
+        ng.gain.linearRampToValueAtTime(0.3, startAt + ls + 0.005);
+        ng.gain.setValueAtTime(0.3, startAt + ls + nd - 0.01);
+        ng.gain.linearRampToValueAtTime(0, startAt + ls + nd);
+        osc.connect(ng); ng.connect(gainNode);
+        osc.start(startAt + ls); osc.stop(startAt + ls + nd + 0.01);
+        playbackNodes.push(osc, ng);
+    }
+    playbackTimer = setTimeout(() => { isPlaying = false; updatePlayBtn(); stopPlayback(); }, dur * 1000 + startDelay * 1000 + 300);
     isPlaying = true;
     updatePlayBtn();
 }

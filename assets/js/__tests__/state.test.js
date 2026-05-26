@@ -15,6 +15,8 @@ describe('state.js', () => {
         expect(state.allTracksMeta).toEqual([]);
         expect(state.parsedTrackIndex).toBeNull();
         expect(state.parsedMIDITracks).toEqual([]);
+        expect(state.isRecording).toBe(false);
+        expect(state.practicePhase).toBe('idle');
     });
 
     it('should correctly distinguish null vs array defaults', () => {
@@ -24,6 +26,8 @@ describe('state.js', () => {
         expect(state.parsedMIDITracks).not.toBeNull();
         expect(state.currentSongId).toBeNull();
         expect(state.currentSongFull).toBeNull();
+        expect(state.isRecording).toBe(false);
+        expect(state.practicePhase).toBe('idle');
     });
 
     it('should allow property mutation', () => {
@@ -37,9 +41,17 @@ describe('state.js', () => {
         state.selectedAccompanimentTrackIds = ['track-a', 'track-b'];
         expect(state.selectedAccompanimentTrackIds).toEqual(['track-a', 'track-b']);
 
+        state.isRecording = true;
+        expect(state.isRecording).toBe(true);
+
+        state.practicePhase = 'recording';
+        expect(state.practicePhase).toBe('recording');
+
         // Cleanup
         state.currentSongId = null;
         state.structures = [];
         state.selectedAccompanimentTrackIds = [];
+        state.isRecording = false;
+        state.practicePhase = 'idle';
     });
 });

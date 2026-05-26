@@ -73,6 +73,9 @@ func main() {
 		r.Get("/songs/{song_id}", adminSongsHandler.GetSong)
 		r.Patch("/songs/{song_id}/tracks/{track_id}", adminSongsHandler.UpdateTrack)
 		r.Delete("/songs/{song_id}", adminSongsHandler.DeleteSong)
+		r.Post("/songs/{song_id}/new-version", adminSongsHandler.CreateNewVersion)
+		r.Put("/songs/{song_id}/set-active", adminSongsHandler.SetActiveVersion)
+		r.Get("/songs/{song_id}/versions", adminSongsHandler.ListVersions)
 
 		r.Post("/songs/{song_id}/structures", adminStructuresHandler.BulkCreate)
 		r.Get("/songs/{song_id}/structures/export", adminStructuresHandler.ExportStructures)

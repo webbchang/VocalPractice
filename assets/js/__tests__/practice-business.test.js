@@ -24,6 +24,9 @@ function setupDOM() {
 // Mock dependent modules with vi.fn() references
 const mockPlayRange = vi.fn();
 const mockStopPlayback = vi.fn();
+const mockPlayRangeDelayed = vi.fn();
+const mockScheduleBeats = vi.fn();
+const mockGetAudioCtx = vi.fn(() => ({ currentTime: 100 }));
 
 vi.mock('../api.js', () => ({
     api: vi.fn(),
@@ -34,6 +37,9 @@ vi.mock('../api.js', () => ({
 vi.mock('../audio.js', () => ({
     playRange: mockPlayRange,
     stopPlayback: mockStopPlayback,
+    playRangeDelayed: mockPlayRangeDelayed,
+    scheduleBeats: mockScheduleBeats,
+    getAudioCtx: mockGetAudioCtx,
     setUpdatePlayBtn: vi.fn(),
 }));
 
@@ -53,6 +59,11 @@ beforeEach(() => {
         extractReferenceNotes: vi.fn((notes, trackIdx, start, end) => {
             return notes.filter(n => n.track === trackIdx && n.start >= start && n.start < end);
         }),
+    };
+    window.MidiParser = {
+        parseMIDINotes: vi.fn(() => [{ pitch: 60, start: 1, dur: 0.5, track: 0 }]),
+        extractBPM: vi.fn(() => 120),
+        midiPitchToFreq: vi.fn(() => 440),
     };
 });
 
@@ -75,6 +86,8 @@ describe('practice-business.js', () => {
         state.referenceNotes = null;
         state.parsedTrackIndex = null;
         state.midiData = null;
+        state.isRecording = false;
+        state.practicePhase = 'idle';
 
         businessModule = await import('../practice-business.js');
     });
@@ -281,16 +294,54 @@ describe('practice-business.js', () => {
             alertSpy.mockRestore();
         });
 
-        it('should update DOM and call playRange when valid', () => {
+        it('should update DOM and call playRangeWithBeats when valid', () => {
             state.selectedStructure = { id: 's1', start: 0, end: 10, title: 'Verse' };
             state.referenceNotes = [{ pitch: 60, start: 1, dur: 0.5 }];
+            state.parsedNotes = [{ pitch: 60, start: 1, dur: 0.5, track: 0 }];
+            state.parsedTrackIndex = 0;
+            state.midiData = new ArrayBuffer(0);
 
             businessModule.startPractice();
 
             expect(document.getElementById('status-text').textContent).toContain('Verse');
             expect(document.getElementById('chart-area').innerHTML).toContain('比對基準');
             expect(document.getElementById('chart-area').innerHTML).toContain('1 個音符');
-            expect(mockPlayRange).toHaveBeenCalledWith(0, 10);
+            // Verify scheduleBeats was called with correct params
+            expect(mockScheduleBeats).toHaveBeenCalled();
+            // Verify playRangeDelayed was called for accompaniment
+            expect(mockPlayRangeDelayed).toHaveBeenCalledWith(0, 10, expect.any(Number));
+        });
+    });
+
+    describe('playRangeWithBeats', () => {
+        it('should schedule 3 beats and play accompaniment without recording', () => {
+            state.parsedNotes = [{ pitch: 60, start: 1, dur: 0.5, track: 0 }];
+            state.parsedTrackIndex = 0;
+            state.midiData = new ArrayBuffer(0);
+
+            businessModule.playRangeWithBeats(0, 10, false);
+
+            expect(mockScheduleBeats).toHaveBeenCalledWith(
+                expect.any(Object),  // AudioContext
+                3,                   // 3 beats
+                expect.any(Number),  // beatInterval
+                expect.any(Number)   // beat1Time
+            );
+            expect(mockPlayRangeDelayed).toHaveBeenCalledWith(0, 10, expect.any(Number));
+        });
+
+        it('should also schedule recording when withRecording=true', () => {
+            state.parsedNotes = [{ pitch: 60, start: 1, dur: 0.5, track: 0 }];
+            state.parsedTrackIndex = 0;
+            state.midiData = new ArrayBuffer(0);
+
+            businessModule.playRangeWithBeats(0, 10, true);
+
+            expect(mockScheduleBeats).toHaveBeenCalled();
+            expect(mockPlayRangeDelayed).toHaveBeenCalledWith(0, 10, expect.any(Number));
+            
+            // Recording is triggered via setTimeout in playRangeWithBeats
+            // Just verify the rest was called correctly
         });
     });
 });

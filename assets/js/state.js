@@ -16,6 +16,8 @@ const state = {
     allTracksMeta: [],
     parsedTrackIndex: null,
     parsedMIDITracks: [],
+    isRecording: false,      // 是否正在錄音
+    practicePhase: 'idle',   // 'idle' | 'playing_accompaniment' | 'playing_beats' | 'recording'
 };
 
 export default state;

@@ -4,7 +4,7 @@
 
 import state from './state.js';
 import { api, loadMIDI, loadStructures } from './api.js';
-import { playRange, stopPlayback } from './audio.js';
+import { getAudioCtx, playRange, playRangeDelayed, stopPlayback, scheduleBeats } from './audio.js';
 
 function determineParsedTrackIndex() {
     const { currentSongFull, selectedTrackId } = state;
@@ -300,6 +300,160 @@ export function toggleAccompanimentTrack(trackId) {
     }
 }
 
+// --- 3-beat + accompaniment playback helpers ---
+
+/**
+ * Calculate beat interval (quarter note duration in seconds) from BPM.
+ * @param {number} bpm
+ * @returns {number} interval in seconds
+ */
+function getBeatInterval(bpm) {
+    return 60 / (bpm || 120);
+}
+
+/**
+ * Get the BPM of the current song from parsed MIDI data.
+ * @returns {number}
+ */
+function getSongBPM() {
+    const { midiData } = state;
+    if (!midiData) return 120;
+    try {
+        return window.MidiParser.extractBPM ? window.MidiParser.extractBPM(midiData) : 120;
+    } catch (e) {
+        return 120;
+    }
+}
+
+/**
+ * Get the first note's start time (in seconds relative to section start) for the practice range.
+ * Used to calculate beat timing.
+ * @param {number} sectionStart
+ * @param {number} sectionEnd
+ * @returns {{firstNoteTime: number, beatInterval: number, bpm: number}}
+ */
+function getTimingInfo(sectionStart, sectionEnd) {
+    const { parsedNotes, parsedTrackIndex } = state;
+    const bpm = getSongBPM();
+    const beatInt = getBeatInterval(bpm);
+
+    // Find the first note in the vocal track within this range
+    let firstNoteTime = 0;
+    if (parsedNotes && parsedTrackIndex >= 0) {
+        const rangeNotes = parsedNotes.filter(n =>
+            n.track === parsedTrackIndex &&
+            n.start >= sectionStart &&
+            n.start < sectionEnd
+        );
+        if (rangeNotes.length > 0) {
+            rangeNotes.sort((a, b) => a.start - b.start);
+            firstNoteTime = rangeNotes[0].start - sectionStart;
+        }
+    }
+
+    return { firstNoteTime, beatInterval: beatInt, bpm };
+}
+
+/**
+ * Play a section/phrase range with 3-beat lead-in.
+ * Used by both section/phrase ▶️ buttons (no recording) and "開始練習" (with recording).
+ *
+ * Timing reference (relative to the section's first note):
+ *   T = firstNote - 3×beatInterval - 0.25: Accompaniment starts
+ *   T = firstNote - 2×beatInterval - 0.25: Beat 1
+ *   T = firstNote - beatInterval - 0.25:    Beat 2
+ *   T = firstNote - 0.25:                   Beat 3
+ *   T = firstNote - 0.25:                   Recording starts (when withRecording=true) — 250ms before first note
+ *
+ * Accompaniment plays the section range with a scheduled delay so the first note
+ * lands at the correct musical time after the 3-beat count-in.
+ *
+ * @param {number} sectionStart - Section start time in seconds
+ * @param {number} sectionEnd - Section end time in seconds
+ * @param {boolean} withRecording - Whether to also start recording
+ */
+export function playRangeWithBeats(sectionStart, sectionEnd, withRecording = false) {
+    const { firstNoteTime, beatInterval, bpm } = getTimingInfo(sectionStart, sectionEnd);
+
+    const ctx = getAudioCtx();
+    const now = ctx.currentTime;
+
+    // We want the first note of the section to play at:
+    //   now + accDelay + firstNoteTime
+    // where accDelay is the delay before accompaniment starts, and firstNoteTime is the
+    // offset from sectionStart to the first note.
+    //
+    // Beats:
+    //   Beat 3 (last beat) at firstNoteAbsTime - 0.25 (= 250ms before first note)
+    //   Beat 2 at firstNoteAbsTime - beatInterval - 0.25
+    //   Beat 1 at firstNoteAbsTime - 2×beatInterval - 0.25
+    //
+    // To ensure Beat 1 is in the future: accDelay + firstNoteTime - 2×beatInterval - 0.25 >= 0
+    // => accDelay >= 2×beatInterval + 0.25 - firstNoteTime
+    const minAccDelay = Math.max(2 * beatInterval + 0.25 - firstNoteTime, 0.1);
+    const accDelay = minAccDelay;
+
+    const firstNoteAbsTime = now + accDelay + firstNoteTime;
+
+    // Beat 1, 2, 3: 3 clicks at beatInterval intervals
+    // Beat 3 (the last count-in beat) is at firstNoteAbsTime - 0.25
+    // So Beat 1 = firstNoteAbsTime - 2×beatInterval - 0.25
+    const beat1Time = firstNoteAbsTime - 2 * beatInterval - 0.25;
+    scheduleBeats(ctx, 3, beatInterval, beat1Time);
+
+    // Play accompaniment with delay so the first note lands at firstNoteAbsTime
+    playRangeDelayed(sectionStart, sectionEnd, accDelay);
+
+    // Start recording 250ms before the first note of the section
+    if (withRecording) {
+        const recDelay = (accDelay + firstNoteTime - 0.25) * 1000;
+        setTimeout(() => {
+            startMediaRecorder();
+        }, Math.max(0, recDelay));
+    }
+}
+
+/**
+ * Start MediaRecorder for recording user's voice.
+ * Tracks are stored for later upload/analysis.
+ */
+let mediaRecorder = null;
+let recordedChunks = [];
+
+function startMediaRecorder() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') return;
+    recordedChunks = [];
+    navigator.mediaDevices.getUserMedia({ audio: true })
+        .then(stream => {
+            mediaRecorder = new MediaRecorder(stream);
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) {
+                    recordedChunks.push(e.data);
+                }
+            };
+            mediaRecorder.start();
+        })
+        .catch(err => {
+            console.error('Failed to start recording:', err);
+        });
+}
+
+export function stopMediaRecorder() {
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+        mediaRecorder.stop();
+        try {
+            mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        } catch (e) {
+            // stream may already be stopped
+        }
+    }
+    mediaRecorder = null;
+}
+
+/**
+ * Start practice: plays accompaniment with 3-beat lead-in, then starts recording.
+ * User sings along with the accompaniment and the recording is sent for analysis.
+ */
 export function startPractice() {
     const { selectedStructure, referenceNotes } = state;
     if (!selectedStructure) {
@@ -316,7 +470,8 @@ export function startPractice() {
         const s = Math.floor(sec % 60);
         return m + ':' + s.toString().padStart(2, '0');
     };
-    document.getElementById('status-text').textContent = `練習：${selectedStructure.title}`;
+    const statusText = `練習：${selectedStructure.title}`;
+    document.getElementById('status-text').textContent = statusText;
     document.getElementById('chart-area').innerHTML = `
         <div>
             <div style="font-size:48px;margin-bottom:12px;">🎯</div>
@@ -331,6 +486,6 @@ export function startPractice() {
         </div>
     `;
     console.log('Reference notes for comparison:', referenceNotes);
-    // Auto-play the range
-    playRange(selectedStructure.start, selectedStructure.end);
+    // Auto-play the range with beats + recording
+    playRangeWithBeats(selectedStructure.start, selectedStructure.end, true);
 }

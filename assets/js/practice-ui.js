@@ -4,6 +4,7 @@
 
 import state from './state.js';
 import { playRange, togglePlayback, getIsPlaying, stopPlayback, setUpdatePlayBtn } from './audio.js';
+import { playRangeWithBeats } from './practice-business.js';
 import { getLyricsForSelection } from './practice-business.js';
 
 function formatTime(sec) {
@@ -102,7 +103,7 @@ export function renderStructureList() {
                 <span class="structure-icon">📂</span>
                 <span class="structure-name">${s.title}</span>
                 <span class="structure-time">${formatTime(s.start_time)} - ${formatTime(s.end_time)}</span>
-                <button class="btn-play" onclick="event.stopPropagation();playRange(${s.start_time},${s.end_time})">▶️</button>
+                <button class="btn-play" onclick="event.stopPropagation();playRangeWithBeats(${s.start_time},${s.end_time},false)">▶️</button>
             </div>
         `;
         if (s.phrases) {
@@ -113,7 +114,7 @@ export function renderStructureList() {
                         <span class="structure-icon">📄</span>
                         <span class="structure-name">${p.title} ${p.lyrics ? '🎤' : ''}</span>
                         <span class="structure-time">${formatTime(p.start_time)} - ${p.lyrics ? '' : formatTime(p.end_time)}</span>
-                        <button class="btn-play" onclick="event.stopPropagation();playRange(${p.start_time},${p.end_time})">▶️</button>
+                        <button class="btn-play" onclick="event.stopPropagation();playRangeWithBeats(${p.start_time},${p.end_time},false)">▶️</button>
                     </div>
                 `;
             }

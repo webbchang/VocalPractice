@@ -131,7 +131,7 @@
         import { playRange, togglePlayback, stopPlayback, getIsPlaying } from '../assets/js/audio.js';
         import {
             selectTrack, selectStructure, onSongChange,
-            toggleAccompanimentTrack, startPractice
+            toggleAccompanimentTrack, startPractice, playRangeWithBeats
         } from '../assets/js/practice-business.js';
         import {
             renderVocalTracks, renderAccompanimentTracks, renderStructureList,
@@ -158,8 +158,8 @@
         window.switchTab = switchTab;
         window.logout = logout;
 
-        // 暴露 playRange 給 inline onclick（段落/句子的 ▶️ 按鈕）
-        window.playRange = playRange;
+        // 暴露 playRangeWithBeats 給 inline onclick（段落/句子的 ▶️ 按鈕）
+        window.playRangeWithBeats = playRangeWithBeats;
 
         // 也暴露 bridge 名稱（UI 模板中使用的 window.__ 開頭函式）
         window.__selectTrack = selectTrack;
