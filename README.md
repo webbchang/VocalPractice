@@ -6,11 +6,11 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 
 | 層級 | 技術 |
 |------|------|
-| 前端 | HTML, CSS, Vanilla JavaScript (Web Audio API 合成器伴奏播放, Client-side MIDI 比對) |
+| 前端 | HTML, CSS, Vanilla JavaScript (ES Modules) |
 | 後端 | Go, chi router |
 | 架構模式 | 領域驅動設計 (DDD) |
 | 資料儲存 | In-memory (可擴展為 PostgreSQL) |
-| 認證方式 | JWT Token |
+| 認證方式 | JWT Token (含角色權限) |
 
 ## 目錄結構
 
@@ -18,14 +18,12 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 ├── cmd/
 │   ├── server/                  # Go 伺服器入口
 │   │   └── main.go
-│   ├── test_server/             # 測試用伺服器
+│   ├── test_server/             # 測試用伺服器（:18080，內建 seed 資料）
 │   │   └── main.go
-│   ├── midi_inspect/            # MIDI 解析檢查工具
-│   │   └── main.go
-│   ├── midi_ref_test/           # MIDI 參考測試 (Node.js)
-│   │   └── ref_filter.cjs
 │   ├── midi_vs_wav_report/      # MIDI vs WAV 比對報告工具 (生成 HTML)
 │   │   └── main.go
+│   ├── midi_ref_test/           # MIDI 參考測試 (Node.js ref_filter.cjs)
+│   │   └── ref_filter.cjs
 │   └── snapshot/                # 專案快照生成工具
 │       └── main.go
 ├── internal/
@@ -39,8 +37,8 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 │   │   ├── auth.go              # POST /api/v1/auth/login + JWT middleware
 │   │   ├── common.go            # respondJSON / respondError 共用工具
 │   │   ├── admin_users.go       # Admin 使用者 CRUD (含 toggle-active)
-│   │   ├── admin_songs.go       # Admin MIDI 上傳/管理 (含 delete)
-│   │   ├── admin_structures.go  # Admin 段落結構管理 (含 copy-phrases)
+│   │   ├── admin_songs.go       # Admin MIDI 上傳/管理 (含 delete, update track)
+│   │   ├── admin_structures.go  # Admin 段落結構管理 (含 copy-phrases, CSV import/export)
 │   │   ├── admin_lyrics.go      # Admin 歌詞批量管理
 │   │   ├── songs.go             # User 歌曲查詢/MIDI 下載/結構樹
 │   │   └── assessments.go       # User 評分提交、歷史、統計、下載、刪除
@@ -49,26 +47,53 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 │   │   ├── midi_parser_test.go
 │   │   ├── assessment_test.go
 │   │   ├── assessment_unit_test.go
-│   │   └── ref_filter_test.go
+│   │   └── ref_filter_test.go   # 8 項 JS-bridge 自動化測試
 │   └── storage/                 # 資料持久層
-│       ├── memory.go
-│       └── memory_test.go
+│       ├── store.go             # Store 介面定義
+│       ├── memory.go            # In-memory 實作
+│       ├── memory_test.go       # 儲存層測試
+│       └── postgres.go          # PostgreSQL 實作（預留）
 ├── assets/
 │   └── js/
-│       ├── midiParser.js        # Client-side MIDI 解析器
-│       └── songDataExtractor.js # 歌曲資料萃取
-├── index.html / style.css / script.js  # 前台使用者頁面（練習、分析、歷史）
-├── ui-screens/                  # UI 介面靜態模板
-│   ├── admin-*.html / admin-*.css     # 管理者後台頁面與樣式
+│       ├── midiParser.js        # Client-side MIDI 解析器 (window.MidiParser)
+│       ├── songDataExtractor.js # 歌曲資料萃取 (window.SongDataExtractor)
+│       ├── audio.js             # 使用者練習音訊模組（ESM）
+│       ├── practice-business.js # 練習業務邏輯（ESM）
+│       ├── practice-ui.js       # 練習 UI 渲染（ESM）
+│       ├── state.js             # 集中式狀態管理（ESM）
+│       ├── api.js               # 前台 API 封裝（ESM, 載入歌曲/MIDI/結構）
+│       ├── user-practice-business.js  # 使用者練習業務邏輯（ESM）
+│       ├── user-practice-ui.js        # 使用者練習 UI（ESM）
+│       └── FUNCTION_MAP.md      # 前端模組函式地圖文件
+├── ui-screens/                  # 管理者 UI 介面（ES Modules 重構版）
+│   ├── js/
+│   │   ├── admin.js             # 管理者主入口（ESM）
+│   │   ├── services/
+│   │   │   └── api-service.js   # API 服務層（SongService）
+│   │   ├── utils/
+│   │   │   ├── error-handler.js # 統一錯誤處理（UIErrorHandler）
+│   │   │   └── songdata-converter.js # 資料轉換（SongDataConverter, tick/sec）
+│   │   ├── adapters/
+│   │   │   ├── ui-renderer.js   # UI 渲染（StructureRenderer, UIStatus）
+│   │   │   └── audio-adapter.js # WebAudio 適配器（WebAudioAdapter）
+│   │   └── __tests__/           # ui-screens JS 單元測試
+│   ├── admin-dashboard.html     # 管理者儀表板（角色權限檢查）
+│   ├── admin-users.html         # 管理者後台 - 使用者管理
+│   ├── admin-songs.html         # 管理者後台 - 歌曲管理
+│   ├── admin-structures.html    # 管理者後台 - 段落結構管理
 │   ├── user-practice.html       # 使用者練習介面
 │   ├── user-dashboard.html      # 使用者儀表板
-│   └── sample-results/          # 評分結果範例 JSON
+│   ├── admin-*.css              # 管理頁面樣式
+│   ├── sample-results/          # 評分結果範例 JSON
+│   └── README.md                # UI 介面說明文件
+├── index.html / style.css / auth.js  # 前台登入頁面
 ├── uploads_test/                # MIDI 測試檔案
 ├── snapshot/                    # 專案快照
 │   ├── progress.md              # 進度追蹤文件
 │   └── snapshot.html            # 自動生成的專案快照
 ├── Vocal Practice App.md        # 設計規格文件
-└── README.md
+├── Dockerfile / docker-compose.yml  # Docker 部署配置
+└── README.md                    # 本文件
 ```
 
 ## 快速開始
@@ -76,19 +101,21 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 ### 1. 啟動後端伺服器
 
 ```bash
+# 正式伺服器（:8080）
 go run cmd/server/main.go
-```
 
-伺服器將監聽 `http://localhost:8080`。
+# 測試伺服器（:18080，內建 seed 資料與測試帳號）
+go run cmd/test_server/main.go
+```
 
 ### 2. 工具命令
 
 ```bash
-# MIDI 解析檢查
-go run cmd/midi_inspect/main.go
-
 # MIDI vs WAV 比對報告（生成 output/comparison_report.html）
 go run cmd/midi_vs_wav_report/main.go
+
+# MIDI 參考測試（Node.js ref_filter）
+cd cmd/midi_ref_test && node ref_filter.cjs
 
 # 生成專案快照（輸出 snapshot/snapshot.html）
 go run cmd/snapshot/main.go
@@ -101,13 +128,15 @@ go run cmd/snapshot/main.go
 ### 4. 開啟管理後台
 
 ```bash
-open ui-screens/admin-users.html
+# 管理者儀表板（需以 admin 角色登入）
+open ui-screens/admin-dashboard.html
 ```
 
 ### 5. 執行測試
 
 ```bash
 go test ./... -v
+npm test            # 前端 JS 單元測試
 ```
 
 ## API 文件
@@ -149,9 +178,11 @@ Parameters:
   title: "Song Title"
   artist: "Artist Name"
   midi_file: (binary .mid file)
+  source_song_id: (optional, UUID for version creation)
 ```
 
 - 伺服器解析 MIDI 檔案中的多個 Track，自動萃取各聲部音符序列及 Tempo Map，並根據 Track 名稱自動標記 `is_vocal`
+- 支援 `source_song_id` 參數將新上傳作為現有歌曲的新版本
 - 回應包含 song_id 與解析出的 Track 列表（名稱、音符數、時長、is_vocal 標記）
 
 #### 查詢歌曲列表
@@ -232,6 +263,28 @@ Content-Type: application/json
 
 將指定 Phrase 資料複製到目標段落結構中。
 
+#### 跨聲部複製段落結構
+
+透過 admin-structures 管理介面「從其他聲部複製」功能，可將一個聲部的完整段落結構複製到另一個聲部：
+
+```
+POST /api/v1/admin/songs/{song_id}/structures
+Content-Type: application/json
+
+{
+  "structures": [{
+    "type": "SECTION",
+    "title": "Verse 1",
+    "start_time": 0,
+    "end_time": 30,
+    "track_id": "target_track_uuid",
+    "phrases": [
+      { "type": "PHRASE", "title": "Line 1", "start_time": 0, "end_time": 15, "track_id": "target_track_uuid" }
+    ]
+  }]
+}
+```
+
 #### 修改段落結構
 
 ```
@@ -285,6 +338,8 @@ Content-Type: application/json
 }
 ```
 
+> 歌詞僅關聯至 PHRASE（句子）層級，SECTION（段落）不儲存歌詞。
+
 ```
 GET /api/v1/admin/tracks/{track_id}/lyrics
 ```
@@ -296,6 +351,30 @@ DELETE /api/v1/admin/songs/{song_id}/lyrics?track_id=xxx&structure_id=xxx
 ```
 
 刪除特定 Track 與 Structure 關聯的歌詞。
+
+#### 歌曲版本管理
+
+```
+POST /api/v1/admin/songs/{song_id}/new-version
+Content-Type: multipart/form-data
+
+Parameters:
+  midi_file: (binary .mid file)
+```
+
+上傳新 MIDI 作為該歌曲的新版本。
+
+```
+PUT /api/v1/admin/songs/{song_id}/set-active
+```
+
+設定該歌曲的活躍版本（使用者端看到的就是此版本）。
+
+```
+GET /api/v1/admin/songs/{song_id}/versions
+```
+
+取得同一首歌的所有版本列表。
 
 ---
 
@@ -315,7 +394,7 @@ Content-Type: application/json
 Response:
 {
   "token": "jwt_token_string",
-  "user": { "id": "uuid", "username": "singer01", "email": "singer01@example.com" }
+  "user": { "id": "uuid", "username": "singer01", "email": "singer01@example.com", "role": "user" }
 }
 ```
 
@@ -346,9 +425,10 @@ GET /api/v1/songs/{song_id}/midi
 #### 取得歌曲段落結構樹
 
 ```
-GET /api/v1/songs/{song_id}/structures
+GET /api/v1/songs/{song_id}/structures?track_id=<track_uuid>
 ```
 
+可選參數：`track_id` 指定聲部 UUID，過濾該聲部的結構樹。
 回應為巢狀結構樹（SECTION → PHRASE），含 lyrics 欄位。
 
 #### 取得特定 Track 參考音訊（若已生成）
@@ -387,7 +467,9 @@ Authorization: Bearer <token>
   "total_notes": 50,
   "matched_notes": 42,
   "average_pitch_deviation": 15.3,
-  "average_duration_deviation": 0.08
+  "average_duration_deviation": 0.08,
+  "segment_scores": {"section_uuid_01": 90, "section_uuid_02": 75},
+  "metadata": {"song_title": "Test Song", "track_name": "Lead Vocal"}
 }
 
 Response:
@@ -439,7 +521,7 @@ Authorization: Bearer <token>
 ## 使用者流程
 
 ```
-1. 登入帳號
+1. 登入帳號（取得 JWT Token）
 2. 選擇歌曲
 3. 選擇要練習的 Vocal Track（評估基準、單選）
 4. 選擇要跟著唱的伴奏 Track（可多選）
@@ -452,13 +534,61 @@ Authorization: Bearer <token>
 10. 同時 MediaRecorder 錄製使用者演唱
 11. 錄音結束 → 停止伴奏 → 自動執行 pitch detection（autocorrelation）
 12. 前端比對參考 MIDI vs 使用者音高/時長
-12. 顯示視覺化分析結果：
+13. 顯示視覺化分析結果：
     ├── 音高曲線疊加圖 (Pitch Contour Overlay)
     ├── 逐音符偏差條狀圖 (Per-Note Deviation Chart)
     ├── 時長比對圖 (Duration Comparison)
     ├── 段落分數儀表板 (Segment Score Dashboard)
     └── 錄音波形 + MIDI Piano Roll
-13. 評分結果上傳伺服器，與帳號關聯
+14. 評分結果上傳伺服器，與帳號關聯
+```
+
+## 前端架構
+
+### 使用者練習模組 (`assets/js/`)
+
+| 檔案 | 說明 |
+|------|------|
+| `midiParser.js` | Client-side MIDI 解析器（window 全域）, `parseMIDINotes` + `midiPitchToFreq` |
+| `songDataExtractor.js` | 參考音符萃取（window 全域） |
+| `state.js` | 集中式狀態管理（ESM） |
+| `api.js` | 前台 API 封裝（載入歌曲/MIDI/結構） |
+| `audio.js` | Web Audio API 合成器伴奏播放 |
+| `practice-business.js` | 練習業務邏輯（選歌、選段、練習流程） |
+| `practice-ui.js` | 練習 UI 渲染 |
+| `user-practice-business.js` | 使用者練習擴充邏輯 |
+| `user-practice-ui.js` | 使用者練習擴充 UI |
+
+### 管理者後台模組 (`ui-screens/js/`)
+
+| 模組 | 檔案 | 說明 |
+|------|------|------|
+| 主入口 | `admin.js` | 管理者頁面邏輯（結構 CRUD、CSV、播放、版本管理） |
+| API 服務 | `services/api-service.js` | 封裝所有 Admin/User API 呼叫（SongService） |
+| 錯誤處理 | `utils/error-handler.js` | 統一錯誤處理（UIErrorHandler），含 401 重新導向、409 衝突對話框 |
+| 資料轉換 | `utils/songdata-converter.js` | Ticks ↔ 秒數轉換、時間格式化、結構正規化 |
+| UI 渲染 | `adapters/ui-renderer.js` | 結構樹渲染、時間軸、聲部選擇器、狀態管理 |
+| 音訊 | `adapters/audio-adapter.js` | WebAudio 播放 API，支援 MIDI 範圍播放 |
+
+### 依賴關係
+
+```
+admin-structures.html (type="module")
+  └── admin.js
+      ├── services/api-service.js
+      ├── utils/error-handler.js
+      ├── utils/songdata-converter.js
+      ├── adapters/ui-renderer.js
+      └── adapters/audio-adapter.js (依賴 window.MidiParser)
+
+user-practice.html (type="module")
+  ├── assets/js/midiParser.js (window global)
+  ├── assets/js/songDataExtractor.js (window global)
+  ├── assets/js/state.js (ESM)
+  ├── assets/js/api.js (ESM)
+  ├── assets/js/audio.js (ESM)
+  ├── assets/js/practice-business.js (ESM)
+  └── assets/js/practice-ui.js (ESM)
 ```
 
 ## 前端視覺化分析
@@ -510,12 +640,11 @@ X 軸為時間線（秒），Y 軸為 MIDI note number。藍色實線為參考 M
 - 僅播放選取時間範圍內的音符
 - 所有 `OscillatorNode` 集中管理，可一鍵停止
 
-### 4. Client-side 參考資料生成
+### 5. Client-side 參考資料生成
 - 前端下載完整 MIDI 檔案後，由 Client-side MIDI parser 解析所有 Track 音符
 - 根據使用者選擇的 Track UUID，自動對應到 MIDI 檔案中的 Track 索引（0-indexed，假設順序與 API 回傳一致）
 - 選擇段落後，過濾出該 Track 在時間範圍 `[start-0.05, end)` 內的所有音符作為參考資料
 - 無需從伺服器額外下載參考資料，降低伺服器負擔
-- 此方式可提高練習流程的反應速度
 
 ## 核心服務
 
@@ -525,15 +654,19 @@ X 軸為時間線（秒），Y 軸為 MIDI note number。藍色實線為參考 M
 
 ### 使用者認證服務
 
-基於 JWT Token 的登入/註冊機制，保護使用者資料與評分歷史。
+基於 JWT Token 的登入/註冊機制，支援角色權限（admin/user），保護管理者後台與使用者資料。
 
 ### MIDI 檔案儲存與串流
 
-管理 MIDI 檔案的上傳、儲存與下載，支援特定 Track 的參考音訊生成與串流。
+管理 MIDI 檔案的上傳、儲存與下載，支援版本管理與活躍版本切換。
 
 ### 歌詞管理
 
-管理者可為每個 Track 的每個段落（Structure）關聯歌詞，支援批量新增/更新、查詢與刪除。
+管理者可為每個 Track 的每個 PHRASE（句子）關聯歌詞，支援批量新增/更新、查詢與刪除。SECTION 層級不儲存歌詞。
+
+### 段落結構管理
+
+支援跨聲部複製結構、CSV 匯入/匯出、時間軸視覺化預覽、Tick 自動計算、以及結構衝突偵測與處理。
 
 ## License
 

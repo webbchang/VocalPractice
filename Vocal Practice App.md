@@ -9,10 +9,12 @@ Vocal Practice App 是一個專為歌手和聲樂學生設計的練習工具。�
 - **版本**: 0.13
 - **語言**: Go (後端), HTML/CSS/JavaScript (前端)
 - **架構模式**: 領域驅動設計 (DDD)
-- **認證方式**: JWT Token
+- **認證方式**: JWT Token（含角色權限 admin/user）
+- **前端架構**: ES Modules 模組化設計
 - **主要組件**:
-  - 後端：使用者管理、MIDI 檔案上傳/解析/儲存/串流、段落結構管理、歌詞管理、評分結果儲存與查詢
-  - 前端：MIDI 多聲部播放與選擇、錄音 → pitch detection → MIDI 比對、五種視覺化分析圖表
+  - 後端：使用者管理、MIDI 檔案上傳/解析/儲存/串流、段落結構管理（含跨聲部複製、CSV 匯入/匯出）、歌詞管理、歌曲版本管理、評分結果儲存與查詢
+  - 前端（管理者）：結構 CRUD、時間軸視覺化、MIDI 範圍播放、Tick 自動計算、版本切換、CSV 匯入匯出
+  - 前端（使用者）：MIDI 多聲部播放與選擇、錄音 → pitch detection → MIDI 比對、五種視覺化分析圖表
 
 ## Backend Architecture & Design Specifications
 
@@ -27,6 +29,8 @@ Stores user account information for authentication and personal assessment histo
 | username | String | Not Null, Unique | Display name |
 | email | String | Not Null, Unique | Login email |
 | password_hash | String | Not Null | BCrypt hashed password |
+| role | String | Not Null, Default "user" | User role ("admin" or "user") |
+| is_active | Boolean | Not Null, Default true | Account active status |
 | created_at | Timestamp | Not Null | Registration time |
 
 ### SongModel
@@ -41,6 +45,9 @@ Stores song metadata and associated MIDI file path. The MIDI file contains multi
 | tracks | Array of MIDITrack | Not Null | Parsed tracks from MIDI file |
 | tempo_map | Array of TempoMapEntry | Nullable | Parsed tempo changes from MIDI |
 | ticks_per_quarter | Integer | Nullable | MIDI resolution (TPQN) |
+| version | Integer | Not Null, Default 1 | Version number |
+| source_song_id | UUID | Nullable | Links to parent song for versioning |
+| is_active | Boolean | Not Null, Default true | Active version flag |
 | created_at | Timestamp | Not Null | Creation time |
 
 ### MIDITrack
@@ -89,6 +96,8 @@ Stores section and phrase cuts on the MIDI timeline defined by the admin. Used b
 | start_tick | Integer | Not Null | Precise MIDI start point in Ticks |
 | end_tick | Integer | Not Null | Precise MIDI end point in Ticks |
 | order_index | Integer | Not Null | Sequential playback order |
+| song_version | Integer | Not Null, Default 1 | Associated song version |
+| track_id | UUID | Nullable | Specific track association for cross-track copy |
 
 ### StructureNode
 Represents a hierarchical structure node used in API responses, containing nested phrases and lyrics.
@@ -152,8 +161,8 @@ Stores assessment results submitted by users after practicing. Each record is as
 * Response: Updated user object.
 
 ### POST /api/v1/admin/songs
-* Action: Uploads a Standard MIDI File (.mid). Server parses the file and extracts multi-track note sequences plus tempo map. Auto-detects vocal tracks by track name keywords (vocal/voice/lead/singer).
-* Payload: `multipart/form-data` with fields `title`, `artist` and file `midi_file`.
+* Action: Uploads a Standard MIDI File (.mid). Server parses the file and extracts multi-track note sequences plus tempo map. Auto-detects vocal tracks by track name keywords (vocal/voice/lead/singer). Supports `source_song_id` parameter to create a new version of an existing song.
+* Payload: `multipart/form-data` with fields `title`, `artist`, file `midi_file`, and optional `source_song_id`.
 * Response: `{"song_id": "uuid", "tracks": [{"id": "uuid", "name": "Lead Vocal", "note_count": 120, "duration_sec": 180.0, "is_vocal": false}, ...]}`
 
 ### GET /api/v1/admin/songs
@@ -261,12 +270,22 @@ Stores assessment results submitted by users after practicing. Each record is as
 * Action: Removes lyrics for a specific track/structure combination.
 * Query params: `?track_id=xxx&structure_id=xxx`
 
+### POST /api/v1/admin/songs/{song_id}/new-version
+* Action: Uploads a new MIDI file as a new version of the song.
+* Payload: `multipart/form-data` with file `midi_file`.
+
+### PUT /api/v1/admin/songs/{song_id}/set-active
+* Action: Sets this song version as the active version (visible to users).
+
+### GET /api/v1/admin/songs/{song_id}/versions
+* Action: Lists all versions of a song.
+
 ## 2.2 User Endpoints
 
 ### POST /api/v1/auth/login
 * Action: Authenticates user and returns JWT token.
 * Payload: `{"email": "singer01@example.com", "password": "securepassword"}`
-* Response: `{"token": "jwt_string", "user": {"id": "uuid", "username": "singer01"}}`
+* Response: `{"token": "jwt_string", "user": {"id": "uuid", "username": "singer01", "email": "singer01@example.com", "role": "user"}}`
 * Authorization: Subsequent requests require `Authorization: Bearer <token>` header.
 
 ### GET /api/v1/songs
@@ -278,8 +297,8 @@ Stores assessment results submitted by users after practicing. Each record is as
 ### GET /api/v1/songs/{song_id}/midi
 * Action: Downloads the full MIDI file as binary `.mid`.
 
-### GET /api/v1/songs/{song_id}/structures
-* Action: Fetches nested structural data tree for frontend segment selection (includes lyrics).
+### GET /api/v1/songs/{song_id}/structures?track_id=<track_uuid>
+* Action: Fetches nested structural data tree for frontend segment selection (includes lyrics). Optional `track_id` parameter filters structures for a specific track.
 
 ```json
 {
@@ -427,7 +446,7 @@ Stores assessment results submitted by users after practicing. Each record is as
 * Logic:
   1. Registers users with email + bcrypt-hashed password.
   2. Login validates credentials → issues JWT token with expiry.
-  3. Middleware validates JWT on protected endpoints.
+  3. Middleware validates JWT on protected endpoints; supports role-based access (admin/user).
   4. Assessment submissions are automatically associated with authenticated user.
 
 ### 4.3 Client-side Pitch Detection (Browser)
@@ -484,13 +503,47 @@ Stores assessment results submitted by users after practicing. Each record is as
 
 ---
 
-## 5. 使用方式
+## 5. 前端架構
+
+### 5.1 使用者練習模組 (`assets/js/`)
+
+| 檔案 | 型態 | 說明 |
+|------|------|------|
+| `midiParser.js` | window global | MIDI 二進位解析，`parseMIDINotes` + `midiPitchToFreq` |
+| `songDataExtractor.js` | window global | 從 parsed notes 過濾指定音軌 + 時間範圍的參考音符 |
+| `state.js` | ESM | 集中式狀態物件，所有模組共用 |
+| `api.js` | ESM | 底層 fetch 封裝，載入歌曲/MIDI/結構 |
+| `audio.js` | ESM | Web Audio API 合成器伴奏播放（三角波 + 低通濾波 + ADSR） |
+| `practice-business.js` | ESM | 練習業務邏輯（選歌、選段、開始練習） |
+| `practice-ui.js` | ESM | 練習 UI 渲染（聲部選擇、結構列表、圖表） |
+| `user-practice-business.js` | ESM | 使用者練習擴充邏輯 |
+| `user-practice-ui.js` | ESM | 使用者練習擴充 UI |
+| `FUNCTION_MAP.md` | 文件 | 所有前端函式的參數、回傳值、依賴關係對照表 |
+
+### 5.2 管理者後台模組 (`ui-screens/js/`)
+
+| 模組 | 檔案 | 說明 |
+|------|------|------|
+| 主入口 | `admin.js` | 管理者頁面主邏輯（結構 CRUD、CSV 匯入匯出、跨聲部複製、播放控制、版本管理） |
+| API 服務 | `services/api-service.js` | SongService 封裝所有 API 呼叫（自動判斷管理/使用者路徑、Token 帶入、FormData 處理） |
+| 錯誤處理 | `utils/error-handler.js` | UIErrorHandler 統一錯誤處理（401 重新導向、409 衝突對話框、Toast 通知） |
+| 資料轉換 | `utils/songdata-converter.js` | SongDataConverter（tick↔sec 轉換、時間格式化、結構正規化、tempo map 快取） |
+| UI 渲染 | `adapters/ui-renderer.js` | StructureRenderer（結構樹、時間軸、聲部選擇器）、UIStatus（播放按鈕、統計、載入狀態） |
+| 音訊 | `adapters/audio-adapter.js` | WebAudioAdapter（MIDI 緩衝區載入、三角波 + 低通濾波 + ADSR 封包播放、節點清理） |
+
+---
+
+## 6. 使用方式
 
 ### 管理後台 (`ui-screens/admin-*.html`)
+- 管理者儀表板：角色權限檢查（admin role required）
 - 建立與管理使用者帳號（含啟用/停用）
-- 上傳 MIDI 檔案（自動解析多聲部 Track、Tempo Map）
-- 檢視/管理歌曲段落結構（Section / Phrase）
-- 管理歌詞（批量新增/更新/刪除）
+- 上傳 MIDI 檔案（自動解析多聲部 Track、Tempo Map，支援版本管理）
+- 檢視/管理歌曲段落結構（Section / Phrase），支援跨聲部複製
+- 管理歌詞（批量新增/更新/刪除），僅 PHRASE 層級儲存歌詞
+- 時間軸視覺化預覽，點擊區塊可編輯
+- CSV 匯入/匯出段落結構，含衝突偵測處理
+- MIDI 範圍試聽播放
 
 ### 前台 (`index.html`、`ui-screens/user-practice.html`、`ui-screens/user-dashboard.html`)
 - 登入帳號
@@ -502,11 +555,11 @@ Stores assessment results submitted by users after practicing. Each record is as
 
 ### 工具命令
 ```bash
-# MIDI 解析檢查
-go run cmd/midi_inspect/main.go
-
 # MIDI vs WAV 比對報告（生成 HTML）
 go run cmd/midi_vs_wav_report/main.go
+
+# MIDI 參考測試（Node.js client-side 邏輯驗證）
+cd cmd/midi_ref_test && node ref_filter.cjs
 
 # 生成專案快照
 go run cmd/snapshot/main.go
@@ -514,23 +567,27 @@ go run cmd/snapshot/main.go
 
 ### 啟動伺服器
 ```bash
+# 正式伺服器（:8080）
 go run cmd/server/main.go
+
+# 測試伺服器（:18080，內建 seed 資料與測試帳號）
+go run cmd/test_server/main.go
 ```
 
 ### 執行測試
 ```bash
 go test ./... -v
+npm test    # 前端 JS 單元測試
 ```
 
 ---
 
-## 6. 未來發展方向
+## 7. 未來發展方向
 
 - 支援更多音頻分析功能
 - Standard MIDI File 匯入增強（多格式相容）
 - 使用者練習進度趨勢圖
 - 社交分享功能（分享練習成果）
-- 持久化儲存（PostgreSQL）
-- 管理後台認證授權
+- 持久化儲存（PostgreSQL 完整實作）
 - MIDI 轉 audio 功能（自動生成各 Track 參考音訊）
 - 練習提醒與目標設定
