@@ -108,6 +108,14 @@ go run cmd/server/main.go
 go run cmd/test_server/main.go
 ```
 
+> **正式伺服器** 預設 admin 帳號為 `admin@localhost` / `admin1234`（由 MemoryStore 自動 seed）。
+> 可透過命令列參數覆蓋 admin 憑證：
+> ```bash
+> JWT_SECRET=your-secret ./vocalpractice_app --admin-email "admin@example.com" --admin-password "mypassword"
+> ```
+> 若省略 `--admin-email` 則保留預設 email `admin@localhost`，僅覆蓋密碼。
+> 此功能同時支援 in-memory 與 PostgreSQL 儲存模式。
+
 ### 2. 工具命令
 
 ```bash

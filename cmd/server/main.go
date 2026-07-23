@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -35,6 +37,11 @@ func main() {
 		log.Fatalf("failed to create upload directory: %v", err)
 	}
 
+	// Parse command-line flags for default admin credentials
+	adminEmail := flag.String("admin-email", "", "Default admin email (overrides seeded value)")
+	adminPassword := flag.String("admin-password", "", "Default admin password (overrides seeded value)")
+	flag.Parse()
+
 	// Initialize store: PostgreSQL or in-memory
 	databaseURL := os.Getenv("DATABASE_URL")
 	var store storage.Store
@@ -49,6 +56,29 @@ func main() {
 	} else {
 		store = storage.NewMemoryStore()
 		log.Println("DATABASE_URL not set, using in-memory store")
+	}
+
+	// Override default admin credentials if flags provided
+	if *adminEmail != "" && *adminPassword != "" {
+		adminUser, err := store.GetUserByEmail(*adminEmail)
+		if err != nil {
+			// Try the default seeded admin email
+			adminUser, err = store.GetUserByEmail("admin@localhost")
+			if err != nil {
+				log.Fatalf("admin user not found: cannot set credentials for %s", *adminEmail)
+			}
+			// Update email as well
+			adminUser.Email = *adminEmail
+		}
+		hashedPwd, err := bcrypt.GenerateFromPassword([]byte(*adminPassword), bcrypt.DefaultCost)
+		if err != nil {
+			log.Fatalf("failed to hash admin password: %v", err)
+		}
+		adminUser.PasswordHash = string(hashedPwd)
+		if err := store.UpdateUser(adminUser); err != nil {
+			log.Fatalf("failed to update admin credentials: %v", err)
+		}
+		log.Printf("Default admin credentials set: %s / %s", *adminEmail, *adminPassword)
 	}
 
 	midiParser := service.NewMIDIParser()
