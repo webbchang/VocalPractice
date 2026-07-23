@@ -43,7 +43,7 @@ vi.mock('../audio.js', () => ({
     setUpdatePlayBtn: vi.fn(),
 }));
 
-// Mock practice-ui dynamic imports (including new renderLyricsPanel)
+// Mock practice-ui dynamic imports
 vi.mock('../practice-ui.js', () => ({
     renderVocalTracks: vi.fn(),
     renderAccompanimentTracks: vi.fn(),
@@ -82,6 +82,8 @@ describe('practice-business.js', () => {
         state.selectedStructure = null;
         state.selectedPhraseIds = [];
         state.selectedPhrasesData = [];
+        state.flatItems = [];
+        state.selectionRange = { from: null, to: null };
         state.parsedNotes = null;
         state.referenceNotes = null;
         state.parsedTrackIndex = null;
@@ -179,37 +181,109 @@ describe('practice-business.js', () => {
         });
     });
 
-    describe('selectStructure', () => {
+    describe('selectStructure (flat items multi-select)', () => {
         beforeEach(() => {
             state.structures = [
-                { id: 's1', title: 'Verse', start_time: 0, end_time: 10 },
+                {
+                    id: 's1', title: 'Verse', start_time: 0, end_time: 10,
+                    phrases: [
+                        { id: 'p1', title: 'Line 1', start_time: 0, end_time: 5, lyrics: 'Hello' },
+                        { id: 'p2', title: 'Line 2', start_time: 5, end_time: 10, lyrics: 'World' },
+                    ],
+                },
                 {
                     id: 's2', title: 'Chorus', start_time: 10, end_time: 20,
                     phrases: [
-                        { id: 'p1', title: 'Line 1', start_time: 10, end_time: 15, lyrics: 'Hello' },
-                        { id: 'p2', title: 'Line 2', start_time: 15, end_time: 20, lyrics: 'World' },
+                        { id: 'p3', title: 'Line 3', start_time: 10, end_time: 15, lyrics: 'Foo' },
+                        { id: 'p4', title: 'Line 4', start_time: 15, end_time: 20, lyrics: 'Bar' },
                     ],
                 },
+            ];
+            state.flatItems = [
+                { type: 'section', data: state.structures[0], section: state.structures[0] },
+                { type: 'phrase', data: state.structures[0].phrases[0], section: state.structures[0] },
+                { type: 'phrase', data: state.structures[0].phrases[1], section: state.structures[0] },
+                { type: 'section', data: state.structures[1], section: state.structures[1] },
+                { type: 'phrase', data: state.structures[1].phrases[0], section: state.structures[1] },
+                { type: 'phrase', data: state.structures[1].phrases[1], section: state.structures[1] },
             ];
             state.parsedNotes = [{ pitch: 60, start: 1, dur: 0.5, track: 0 }];
             state.parsedTrackIndex = 0;
         });
 
-        it('should select a top-level structure', () => {
+        it('should select a single section', () => {
             businessModule.selectStructure('s1');
+            expect(state.selectionRange).toEqual({ from: 0, to: 0 });
             expect(state.selectedStructure).toBeDefined();
-            expect(state.selectedStructure.id).toBe('s1');
             expect(state.selectedStructure.title).toBe('Verse');
             expect(state.selectedStructure.start).toBe(0);
             expect(state.selectedStructure.end).toBe(10);
+            // Section implicitly includes its phrases
+            expect(state.selectedPhraseIds).toEqual(['p1', 'p2']);
         });
 
-        it('should select a phrase within a structure (single)', () => {
+        it('should select a single phrase', () => {
             businessModule.selectStructure('p1');
-            expect(state.selectedStructure).toBeDefined();
-            expect(state.selectedStructure.id).toBe('p1');
+            expect(state.selectionRange).toEqual({ from: 1, to: 1 });
             expect(state.selectedStructure.title).toBe('Line 1');
             expect(state.selectedPhraseIds).toEqual(['p1']);
+        });
+
+        it('should extend selection forward when clicking later item', () => {
+            businessModule.selectStructure('p1'); // idx 1
+            businessModule.selectStructure('p2'); // idx 2
+            expect(state.selectionRange).toEqual({ from: 1, to: 2 });
+            expect(state.selectedPhraseIds).toEqual(['p1', 'p2']);
+        });
+
+        it('should extend selection backward when clicking earlier item first', () => {
+            businessModule.selectStructure('p2'); // idx 2
+            businessModule.selectStructure('p1'); // idx 1
+            expect(state.selectionRange).toEqual({ from: 1, to: 2 });
+            expect(state.selectedPhraseIds).toEqual(['p1', 'p2']);
+        });
+
+        it('should extend across sections', () => {
+            businessModule.selectStructure('p2'); // idx 2 (Verse Line 2)
+            businessModule.selectStructure('p3'); // idx 4 (Chorus Line 3)
+            expect(state.selectionRange).toEqual({ from: 2, to: 4 });
+            // Should include p2, s2 (Chorus), p3
+            expect(state.selectedPhraseIds).toContain('p2');
+            expect(state.selectedPhraseIds).toContain('p3');
+            expect(state.selectedPhraseIds).toContain('p4'); // Chorus implicitly includes p4
+            expect(state.selectedStructure.title).toContain('Line 2');
+            expect(state.selectedStructure.title).toContain('Line 3');
+        });
+
+        it('should shrink from start when clicking first selected item again', () => {
+            businessModule.selectStructure('p1'); // idx 1
+            businessModule.selectStructure('p3'); // idx 4 → range [1, 4]
+            // Click p1 (first) again → shrink to [2, 4]
+            businessModule.selectStructure('p1');
+            expect(state.selectionRange).toEqual({ from: 2, to: 4 });
+            expect(state.selectedPhraseIds).not.toContain('p1');
+        });
+
+        it('should shrink from end when clicking last selected item again', () => {
+            businessModule.selectStructure('p1'); // idx 1
+            businessModule.selectStructure('p3'); // idx 4 → range [1, 4]
+            // Click p3 (last) again → shrink to [1, 3]
+            // Range [1, 3] includes: p1, p2, s2(Chorus) → phrases: p1, p2, p3, p4
+            // s2 is still in range so its phrases (p3, p4) are still included
+            businessModule.selectStructure('p3');
+            expect(state.selectionRange).toEqual({ from: 1, to: 3 });
+            // s2 (Chorus) at idx 3 is still in range, so p3, p4 are implicitly included
+            expect(state.selectedPhraseIds).toContain('p3');
+            expect(state.selectedPhraseIds).toContain('p4');
+        });
+
+        it('should reset to single item when clicking middle of selection', () => {
+            businessModule.selectStructure('p1'); // idx 1
+            businessModule.selectStructure('p3'); // idx 4 → range [1, 4]
+            // Click p2 (idx 2, middle) → reset to [2, 2]
+            businessModule.selectStructure('p2');
+            expect(state.selectionRange).toEqual({ from: 2, to: 2 });
+            expect(state.selectedPhraseIds).toEqual(['p2']);
         });
 
         it('should generate referenceNotes on selection', () => {
@@ -223,56 +297,20 @@ describe('practice-business.js', () => {
             expect(state.referenceNotes).toBeNull();
         });
 
-        it('should clear selectedPhraseIds when selecting a section', () => {
-            state.selectedPhraseIds = ['p1', 'p2'];
-            state.selectedPhrasesData = [{ id: 'p1' }, { id: 'p2' }];
+        it('should select section and implicitly include its phrases', () => {
             businessModule.selectStructure('s1');
-            expect(state.selectedPhraseIds).toEqual([]);
-            expect(state.selectedPhrasesData).toEqual([]);
-            expect(state.selectedStructure.id).toBe('s1');
-        });
-
-        it('should extend selection forward when clicking later phrase', () => {
-            businessModule.selectStructure('p1');
-            businessModule.selectStructure('p2');
             expect(state.selectedPhraseIds).toEqual(['p1', 'p2']);
-            expect(state.selectedStructure.title).toContain('Line 1');
-            expect(state.selectedStructure.start).toBe(10);
-            expect(state.selectedStructure.end).toBe(20);
+            expect(state.selectedPhrasesData.length).toBe(2);
         });
 
-        it('should extend selection backward when clicking earlier phrase first', () => {
-            businessModule.selectStructure('p2');
-            businessModule.selectStructure('p1');
-            expect(state.selectedPhraseIds).toEqual(['p1', 'p2']);
-            expect(state.selectedStructure.title).toContain('Line 2');
-        });
-
-        it('should shrink from start when clicking first selected phrase again', () => {
-            businessModule.selectStructure('p1');
-            businessModule.selectStructure('p2');
-            // Now both selected, click p1 (first) again → should shrink to just p2
-            businessModule.selectStructure('p1');
-            expect(state.selectedPhraseIds).toEqual(['p2']);
-            expect(state.selectedStructure.id).toBe('p2');
-        });
-
-        it('should shrink from end when clicking last selected phrase again', () => {
-            businessModule.selectStructure('p1');
-            businessModule.selectStructure('p2');
-            // Click p2 (last) again → should shrink to just p1
-            businessModule.selectStructure('p2');
-            expect(state.selectedPhraseIds).toEqual(['p1']);
-            expect(state.selectedStructure.id).toBe('p1');
-        });
-
-        it('should fall back to parent section when last phrase deselected', () => {
-            businessModule.selectStructure('p1');
-            // Only p1 selected, click it again → should fall back to parent section
-            businessModule.selectStructure('p1');
-            expect(state.selectedPhraseIds).toEqual([]);
-            expect(state.selectedPhrasesData).toEqual([]);
-            expect(state.selectedStructure.id).toBe('s2');
+        it('should select section + phrase across sections', () => {
+            // Select s1 (Verse) → idx 0
+            businessModule.selectStructure('s1');
+            // Then extend to p3 (Chorus Line 3) → idx 4
+            businessModule.selectStructure('p3');
+            expect(state.selectionRange).toEqual({ from: 0, to: 4 });
+            // Should include all phrases from both sections
+            expect(state.selectedPhraseIds).toEqual(['p1', 'p2', 'p3', 'p4']);
         });
     });
 

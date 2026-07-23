@@ -18,6 +18,10 @@ const state = {
     parsedMIDITracks: [],
     isRecording: false,      // 是否正在錄音
     practicePhase: 'idle',   // 'idle' | 'playing_accompaniment' | 'playing_beats' | 'recording'
+
+    // 扁平化選取模式（段落+句子混合連續多選）
+    flatItems: [],           // [{ type: 'section'|'phrase', data: originalObj, section: parentSection }, ...]
+    selectionRange: { from: null, to: null }, // flatItems 的 index 範圍
 };
 
 export default state;

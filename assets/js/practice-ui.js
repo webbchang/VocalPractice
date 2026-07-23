@@ -86,38 +86,114 @@ export function renderAccompanimentTracks(tracks) {
     container.innerHTML = html;
 }
 
-// --- 段落結構渲染（支援多選句子）---
+/**
+ * 檢查 flatItems 中的某個 index 是否在選取範圍內
+ */
+function isItemSelected(idx) {
+    const { from, to } = state.selectionRange;
+    if (from === null || to === null) return false;
+    const minIdx = Math.min(from, to);
+    const maxIdx = Math.max(from, to);
+    return idx >= minIdx && idx <= maxIdx;
+}
+
+/**
+ * 檢查 section 是否因為其 phrases 全被選取而間接選取
+ */
+function isSectionImplicitlySelected(sectionId) {
+    const { flatItems, selectionRange } = state;
+    const { from, to } = selectionRange;
+    if (from === null || to === null) return false;
+
+    // 找出這個 section 在 flatItems 中的範圍
+    let sectionIdx = -1;
+    let phraseStartIdx = -1;
+    let phraseEndIdx = -1;
+    for (let i = 0; i < flatItems.length; i++) {
+        const item = flatItems[i];
+        if (item.type === 'section' && item.data.id === sectionId) {
+            sectionIdx = i;
+            phraseStartIdx = i + 1;
+            continue;
+        }
+        // 找到下一個 section 或結尾
+        if (item.type === 'section' && sectionIdx >= 0 && phraseStartIdx >= 0) {
+            phraseEndIdx = i - 1;
+            break;
+        }
+    }
+    if (phraseStartIdx < 0) return false;
+    if (phraseEndIdx < 0) phraseEndIdx = flatItems.length - 1;
+    if (phraseStartIdx > phraseEndIdx) return false; // no phrases
+
+    // 檢查是否所有 phrases 都在選取範圍內
+    const minIdx = Math.min(from, to);
+    const maxIdx = Math.max(from, to);
+    for (let i = phraseStartIdx; i <= phraseEndIdx; i++) {
+        if (flatItems[i].type !== 'phrase') continue;
+        if (i < minIdx || i > maxIdx) return false;
+    }
+    return true;
+}
+
+// --- 段落結構渲染（支援混合多選段落+句子）---
 export function renderStructureList() {
     const container = document.getElementById('structure-list');
-    const { structures, selectedStructure, selectedPhraseIds } = state;
-    if (!structures || structures.length === 0) {
+    const { flatItems, selectionRange } = state;
+    if (!flatItems || flatItems.length === 0) {
+        // fallback: try using structures directly
+        const { structures } = state;
+        if (!structures || structures.length === 0) {
+            container.innerHTML = '<div class="no-structures">此音軌尚無段落結構<br><small>請管理員在後台設定段落</small></div>';
+            return;
+        }
+    }
+
+    // 如果沒有 flatItems 但 structures 有資料，嘗試建立
+    let items = flatItems;
+    if (items.length === 0 && state.structures.length > 0) {
+        // call buildFlatItems from business — but we can't import it, so build inline
+        for (const s of state.structures) {
+            items.push({ type: 'section', data: s, section: s });
+            if (s.phrases) {
+                for (const p of s.phrases) {
+                    items.push({ type: 'phrase', data: p, section: s });
+                }
+            }
+        }
+    }
+
+    // 如果還是沒有，顯示提示
+    if (items.length === 0) {
         container.innerHTML = '<div class="no-structures">此音軌尚無段落結構<br><small>請管理員在後台設定段落</small></div>';
         return;
     }
 
     let html = '';
-    for (const s of structures) {
-        const isSectionSelected = selectedStructure && selectedStructure.id === s.id && selectedPhraseIds.length === 0;
-        html += `
-            <div class="structure-option ${isSectionSelected ? 'selected' : ''}" onclick="window.__selectStructure('${s.id}')">
-                <span class="structure-icon">📂</span>
-                <span class="structure-name">${s.title}</span>
-                <span class="structure-time">${formatTime(s.start_time)} - ${formatTime(s.end_time)}</span>
-                <button class="btn-play" onclick="event.stopPropagation();playRangeWithBeats(${s.start_time},${s.end_time},false)">▶️</button>
-            </div>
-        `;
-        if (s.phrases) {
-            for (const p of s.phrases) {
-                const isPhraseSelected = selectedPhraseIds.includes(p.id);
-                html += `
-                    <div class="structure-option phrased ${isPhraseSelected ? 'selected' : ''}" onclick="window.__selectStructure('${p.id}')">
-                        <span class="structure-icon">📄</span>
-                        <span class="structure-name">${p.title} ${p.lyrics ? '🎤' : ''}</span>
-                        <span class="structure-time">${formatTime(p.start_time)} - ${p.lyrics ? '' : formatTime(p.end_time)}</span>
-                        <button class="btn-play" onclick="event.stopPropagation();playRangeWithBeats(${p.start_time},${p.end_time},false)">▶️</button>
-                    </div>
-                `;
-            }
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const isSelected = isItemSelected(i);
+
+        if (item.type === 'section') {
+            // 檢查是否因為 phrases 全選而間接選取
+            const isImplicit = !isSelected && isSectionImplicitlySelected(item.data.id);
+            html += `
+                <div class="structure-option ${isSelected || isImplicit ? 'selected' : ''}" onclick="window.__selectStructure('${item.data.id}')">
+                    <span class="structure-icon">📂</span>
+                    <span class="structure-name">${item.data.title}</span>
+                    <span class="structure-time">${formatTime(item.data.start_time)} - ${formatTime(item.data.end_time)}</span>
+                    <button class="btn-play" onclick="event.stopPropagation();playRangeWithBeats(${item.data.start_time},${item.data.end_time},false)">▶️</button>
+                </div>
+            `;
+        } else if (item.type === 'phrase') {
+            html += `
+                <div class="structure-option phrased ${isSelected ? 'selected' : ''}" onclick="window.__selectStructure('${item.data.id}')">
+                    <span class="structure-icon">📄</span>
+                    <span class="structure-name">${item.data.title} ${item.data.lyrics ? '🎤' : ''}</span>
+                    <span class="structure-time">${formatTime(item.data.start_time)} - ${item.data.lyrics ? '' : formatTime(item.data.end_time)}</span>
+                    <button class="btn-play" onclick="event.stopPropagation();playRangeWithBeats(${item.data.start_time},${item.data.end_time},false)">▶️</button>
+                </div>
+            `;
         }
     }
     container.innerHTML = html;
@@ -162,7 +238,7 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-// --- 選擇 UI 管理 ---
+// --- 選擇 UI 管理（已由 business 的 updateSelectionUI 取代）---
 export function updateSelectionUI() {
     if (state.selectedStructure) {
         const formatTime = (sec) => {
@@ -185,6 +261,7 @@ export function clearSelection() {
     state.selectedStructure = null;
     state.selectedPhraseIds = [];
     state.selectedPhrasesData = [];
+    state.selectionRange = { from: null, to: null };
     document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
     document.getElementById('range-actions').style.display = 'none';
     document.getElementById('current-range-label').textContent = '未選擇';

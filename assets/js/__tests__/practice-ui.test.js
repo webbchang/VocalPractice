@@ -164,6 +164,12 @@ describe('practice-ui.js', () => {
                     ],
                 },
             ];
+            state.flatItems = [
+                { type: 'section', data: state.structures[0], section: state.structures[0] },
+                { type: 'phrase', data: state.structures[0].phrases[0], section: state.structures[0] },
+                { type: 'phrase', data: state.structures[0].phrases[1], section: state.structures[0] },
+            ];
+            state.selectionRange = { from: 1, to: 2 };
             state.selectedPhraseIds = ['p1', 'p2'];
             state.selectedStructure = { id: 'p1,p2', title: 'Line 1 ~ Line 2（2句）', start: 0, end: 10 };
 
@@ -173,7 +179,7 @@ describe('practice-ui.js', () => {
             expect(container.innerHTML).toContain('class="structure-option phrased selected"');
         });
 
-        it('should NOT highlight section when phrases are selected', () => {
+        it('should highlight section implicitly when all its phrases are selected', () => {
             state.structures = [
                 {
                     id: 's1', title: 'Verse', start_time: 0, end_time: 10,
@@ -182,14 +188,19 @@ describe('practice-ui.js', () => {
                     ],
                 },
             ];
+            state.flatItems = [
+                { type: 'section', data: state.structures[0], section: state.structures[0] },
+                { type: 'phrase', data: state.structures[0].phrases[0], section: state.structures[0] },
+            ];
+            state.selectionRange = { from: 1, to: 1 };
             state.selectedPhraseIds = ['p1'];
             state.selectedStructure = { id: 'p1', title: 'Line 1', start: 0, end: 5 };
 
             uiModule.renderStructureList();
             const container = document.getElementById('structure-list');
-            // Section should NOT have class 'selected' when phrases are selected
-            // (its id doesn't match selected id when selectedPhraseIds is non-empty)
-            expect(container.innerHTML).not.toContain('structure-option selected');
+            // Section should be implicitly highlighted because its only phrase is selected
+            expect(container.innerHTML).toContain('class="structure-option selected"');
+            expect(container.innerHTML).toContain('class="structure-option phrased selected"');
         });
     });
 

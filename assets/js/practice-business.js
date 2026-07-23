@@ -35,6 +35,100 @@ function generateReferenceData() {
 }
 
 /**
+ * 從 structures 建立扁平化項目清單
+ * 每個 section 和其底下的 phrases 依序排列
+ */
+function buildFlatItems() {
+    const items = [];
+    for (const s of state.structures) {
+        items.push({ type: 'section', data: s, section: s });
+        if (s.phrases) {
+            for (const p of s.phrases) {
+                items.push({ type: 'phrase', data: p, section: s });
+            }
+        }
+    }
+    return items;
+}
+
+/**
+ * 從 selectionRange 計算合併後的 selectedStructure（start, end, title）
+ */
+function computeSelectedStructure() {
+    const { flatItems, selectionRange } = state;
+    const { from, to } = selectionRange;
+    if (from === null || to === null || from > to) {
+        state.selectedStructure = null;
+        state.selectedPhraseIds = [];
+        state.selectedPhrasesData = [];
+        return;
+    }
+
+    const selected = flatItems.slice(from, to + 1);
+    if (selected.length === 0) {
+        state.selectedStructure = null;
+        state.selectedPhraseIds = [];
+        state.selectedPhrasesData = [];
+        return;
+    }
+
+    // 收集所有選取的 phrases（含 section 隱含的 phrases）
+    const allPhrases = [];
+    const allPhraseIds = [];
+    for (const item of selected) {
+        if (item.type === 'phrase') {
+            if (!allPhraseIds.includes(item.data.id)) {
+                allPhraseIds.push(item.data.id);
+                allPhrases.push(item.data);
+            }
+        } else if (item.type === 'section') {
+            // section 含有其下所有 phrases
+            if (item.data.phrases) {
+                for (const p of item.data.phrases) {
+                    if (!allPhraseIds.includes(p.id)) {
+                        allPhraseIds.push(p.id);
+                        allPhrases.push(p);
+                    }
+                }
+            }
+        }
+    }
+
+    // 從選取項目計算 start/end
+    let minStart = Infinity;
+    let maxEnd = -Infinity;
+    for (const item of selected) {
+        const start = item.type === 'section' ? item.data.start_time : item.data.start_time;
+        const end = item.type === 'section' ? item.data.end_time : item.data.end_time;
+        if (start < minStart) minStart = start;
+        if (end > maxEnd) maxEnd = end;
+    }
+
+    if (minStart === Infinity) {
+        state.selectedStructure = null;
+        state.selectedPhraseIds = [];
+        state.selectedPhrasesData = [];
+        return;
+    }
+
+    // 產生 title
+    let title;
+    if (selected.length === 1) {
+        title = selected[0].data.title;
+    } else {
+        const firstTitle = selected[0].data.title;
+        const lastTitle = selected[selected.length - 1].data.title;
+        const count = selected.length;
+        const totalPhrases = allPhrases.length;
+        title = `${firstTitle} ∼ ${lastTitle}（${count}項${totalPhrases > count ? `, ${totalPhrases}句` : ''}）`;
+    }
+
+    state.selectedStructure = { id: from + '-' + to, title, start: minStart, end: maxEnd };
+    state.selectedPhraseIds = allPhraseIds;
+    state.selectedPhrasesData = allPhrases;
+}
+
+/**
  * 收集當前選取範圍的歌詞資料
  * 回傳：{ phrases: [{ title, lyrics }], count: number }
  */
@@ -88,6 +182,8 @@ export async function selectTrack(trackId) {
     state.parsedTrackIndex = determineParsedTrackIndex();
     state.selectedPhraseIds = [];
     state.selectedPhrasesData = [];
+    state.flatItems = [];
+    state.selectionRange = { from: null, to: null };
     // Re-render both vocal and accompaniment track lists
     const { renderVocalTracks, renderAccompanimentTracks } = await import('./practice-ui.js');
     if (state.currentSongFull && state.currentSongFull.tracks) {
@@ -96,128 +192,63 @@ export async function selectTrack(trackId) {
     }
     const structures = await loadStructures(state.currentSongId, trackId);
     state.structures = structures;
+    state.flatItems = buildFlatItems();
     const { renderStructureList, renderLyricsPanel } = await import('./practice-ui.js');
     renderStructureList();
     renderLyricsPanel();
 }
 
-export function selectStructure(id) {
-    const { structures } = state;
-    for (const s of structures) {
-        if (s.id === id) {
-            // 點選 section → 清除多選，選取整個 section
-            state.selectedPhraseIds = [];
-            state.selectedPhrasesData = [];
-            state.selectedStructure = { id: s.id, title: s.title, start: s.start_time, end: s.end_time };
-            generateReferenceData();
-            updateSelectionUI();
-            return;
-        }
-        if (s.phrases) {
-            for (const p of s.phrases) {
-                if (p.id === id) {
-                    // 點選 phrase → toggle 多選
-                    togglePhraseSelection(p, s);
-                    return;
-                }
-            }
-        }
-    }
-}
-
 /**
- * 切換句子的選取狀態（連續多選）
+ * 選取結構（段落或句子），支援混合連續多選
+ * @param {string} id - section 或 phrase 的 id
  */
-function togglePhraseSelection(clickedPhrase, parentSection) {
-    const { selectedPhraseIds, selectedPhrasesData, structures } = state;
-    const allPhrases = [];
-    for (const s of structures) {
-        if (s.phrases) {
-            for (const p of s.phrases) {
-                allPhrases.push({ phrase: p, section: s });
-            }
-        }
+export function selectStructure(id) {
+    const { flatItems, selectionRange } = state;
+
+    // 如果 flatItems 還沒建立，先建立
+    if (flatItems.length === 0) {
+        state.flatItems = buildFlatItems();
     }
 
-    // 找出被點擊句子的索引
-    const phraseIndices = allPhrases.map(item => item.phrase.id);
-    const clickedIdx = phraseIndices.indexOf(clickedPhrase.id);
+    // 在 flatItems 中找到被點選的項目
+    const clickedIdx = flatItems.findIndex(item => item.data.id === id);
     if (clickedIdx === -1) return;
 
-    // 計算選取範圍
-    let newIds;
-    if (selectedPhraseIds.includes(clickedPhrase.id)) {
-        // 如果已選取且是第一個或最後一個，縮減
-        if (selectedPhraseIds.length === 1) {
-            // 只有一個時清除選取 → 改為選取 parent section
-            state.selectedPhraseIds = [];
-            state.selectedPhrasesData = [];
-            if (parentSection) {
-                state.selectedStructure = { id: parentSection.id, title: parentSection.title, start: parentSection.start_time, end: parentSection.end_time };
-            }
-            generateReferenceData();
-            updateSelectionUI();
-            return;
-        }
-        // 移除末尾或開頭
-        const firstIdx = phraseIndices.indexOf(selectedPhraseIds[0]);
-        const lastIdx = phraseIndices.indexOf(selectedPhraseIds[selectedPhraseIds.length - 1]);
-        if (clickedIdx === firstIdx) {
-            newIds = selectedPhraseIds.slice(1);
-        } else if (clickedIdx === lastIdx) {
-            newIds = selectedPhraseIds.slice(0, -1);
+    const { from, to } = selectionRange;
+
+    // 情況 1: 目前沒有選取 → 選取點選的項目
+    if (from === null || to === null) {
+        state.selectionRange = { from: clickedIdx, to: clickedIdx };
+        computeSelectedStructure();
+        generateReferenceData();
+        updateSelectionUI();
+        return;
+    }
+
+    const minIdx = Math.min(from, to);
+    const maxIdx = Math.max(from, to);
+
+    // 情況 2: 點選的項目已在選取範圍內
+    if (clickedIdx >= minIdx && clickedIdx <= maxIdx) {
+        // 點選邊緣 → 縮減
+        if (clickedIdx === minIdx) {
+            state.selectionRange = { from: minIdx + 1, to: maxIdx };
+        } else if (clickedIdx === maxIdx) {
+            state.selectionRange = { from: minIdx, to: maxIdx - 1 };
         } else {
-            // 點選中間的 → 不做變化或重選
-            newIds = [clickedPhrase.id];
+            // 點選中間 → 重設為只選該項
+            state.selectionRange = { from: clickedIdx, to: clickedIdx };
         }
     } else {
-        // 新選取：判斷連續性
-        if (selectedPhraseIds.length === 0) {
-            newIds = [clickedPhrase.id];
+        // 情況 3: 在範圍外 → 擴展
+        if (clickedIdx < minIdx) {
+            state.selectionRange = { from: clickedIdx, to: maxIdx };
         } else {
-            const firstSelectedIdx = phraseIndices.indexOf(selectedPhraseIds[0]);
-            const lastSelectedIdx = phraseIndices.indexOf(selectedPhraseIds[selectedPhraseIds.length - 1]);
-            const minIdx = Math.min(firstSelectedIdx, lastSelectedIdx);
-            const maxIdx = Math.max(firstSelectedIdx, lastSelectedIdx);
-
-            if (clickedIdx < minIdx) {
-                // 往前擴展
-                newIds = phraseIndices.slice(clickedIdx, maxIdx + 1);
-            } else if (clickedIdx > maxIdx) {
-                // 往後擴展
-                newIds = phraseIndices.slice(minIdx, clickedIdx + 1);
-            } else {
-                // 在範圍內 → 單選此句
-                newIds = [clickedPhrase.id];
-            }
+            state.selectionRange = { from: minIdx, to: clickedIdx };
         }
     }
 
-    // 更新 state
-    state.selectedPhraseIds = newIds;
-    state.selectedPhrasesData = newIds.map(id => {
-        for (const item of allPhrases) {
-            if (item.phrase.id === id) return item.phrase;
-        }
-        return null;
-    }).filter(Boolean);
-
-    // 計算合併範圍
-    if (newIds.length > 0) {
-        const firstPhrase = allPhrases.find(item => item.phrase.id === newIds[0]);
-        const lastPhrase = allPhrases.find(item => item.phrase.id === newIds[newIds.length - 1]);
-        if (firstPhrase && lastPhrase) {
-            const firstStart = firstPhrase.phrase.start_time;
-            const lastEnd = lastPhrase.phrase.end_time;
-            const title = newIds.length === 1
-                ? firstPhrase.phrase.title
-                : `${firstPhrase.phrase.title} ∼ ${lastPhrase.phrase.title}（${newIds.length}句）`;
-            state.selectedStructure = { id: newIds.join(','), title, start: firstStart, end: lastEnd };
-        }
-    } else {
-        state.selectedStructure = null;
-    }
-
+    computeSelectedStructure();
     generateReferenceData();
     updateSelectionUI();
 }
@@ -244,12 +275,28 @@ function updateSelectionUI() {
     }
 }
 
+export function clearSelection() {
+    state.selectedStructure = null;
+    state.selectedPhraseIds = [];
+    state.selectedPhrasesData = [];
+    state.selectionRange = { from: null, to: null };
+    document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
+    document.getElementById('range-actions').style.display = 'none';
+    document.getElementById('current-range-label').textContent = '未選擇';
+    import('./practice-ui.js').then(m => {
+        m.renderStructureList();
+        m.renderLyricsPanel();
+    });
+}
+
 export async function onSongChange() {
     const select = document.getElementById('song-select');
     state.currentSongId = select.value || null;
     state.selectedStructure = null;
     state.selectedPhraseIds = [];
     state.selectedPhrasesData = [];
+    state.flatItems = [];
+    state.selectionRange = { from: null, to: null };
     document.getElementById('range-actions').style.display = 'none';
     document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
 
