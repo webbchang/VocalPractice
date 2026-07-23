@@ -4,10 +4,17 @@
 const API_BASE = '/api/v1';
 
 export async function api(path, options = {}) {
+    const token = localStorage.getItem('token');
+    const { headers: optHeaders, ...rest } = options;
+    const headers = {
+        'Content-Type': 'application/json',
+        ...optHeaders,
+    };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
     const res = await fetch(API_BASE + path, {
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
-        ...options,
+        headers,
+        ...rest,
     });
     if (!res.ok) {
         const err = await res.json().catch(() => ({ error: res.statusText }));
