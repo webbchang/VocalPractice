@@ -267,8 +267,9 @@ describe('SongService', () => {
                 '/api/v1/admin/songs/song-1/structures/import?force=true',
                 expect.objectContaining({
                     method: 'POST',
-                    headers: { 'Content-Type': 'text/csv' },
+                    headers: { 'Content-Type': 'text/csv', 'Authorization': 'Bearer test-token' },
                     body: csvText,
+                    credentials: 'same-origin',
                 })
             );
         });

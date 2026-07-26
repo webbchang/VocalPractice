@@ -6,9 +6,10 @@ export const SongService={
 // 基礎 API 呼叫器 (改進自原始 api helper [1])
     async _request(path, options = {}) {
         const token = localStorage.getItem('token');
+        const { headers: optHeaders, ...rest } = options;
         const headers = options.body instanceof FormData ? {} : { 
             'Content-Type': 'application/json', 
-            ...options.headers 
+            ...optHeaders 
         };
         if (token) headers['Authorization'] = `Bearer ${token}`;
 
@@ -19,7 +20,7 @@ export const SongService={
         const res = await fetch(base + finalPath, { 
             credentials: 'same-origin', 
             headers, 
-            ...options 
+            ...rest 
         });
 
         if (!res.ok) {
