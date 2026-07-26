@@ -118,7 +118,6 @@ export const StructureRenderer = {
             if (phraseCount > 0) {
                 for (let i = 0; i < phraseCount; i++) {
                     const p = sortedPhrases[i];
-                    const isLast = (i === phraseCount - 1);
                     const lyricsVal = p.lyrics || '';
                     html += `
                         <div class="tree-phrase">
@@ -129,11 +128,10 @@ export const StructureRenderer = {
                                     <button class="btn btn-sm btn-play" data-action="play" data-start="${p.start_time}" data-end="${p.end_time}" title="試聽句子">▶️</button>
                                 </div>
                                 <div class="lyrics-row">
-                                    <input class="lyrics-input" type="text" id="lyrics-${p.id}" placeholder="輸入歌詞..." value="${escapeHtml(lyricsVal)}">
+                                    <span class="lyrics-text">${escapeHtml(lyricsVal) || '（無歌詞）'}</span>
                                 </div>
                             </div>
-                            <div><button class="btn btn-secondary btn-sm" data-action="edit" data-id="${p.id}" data-type="PHRASE">編輯</button></div>
-                            ${isLast ? `<div><button class="btn btn-sm btn-primary" data-action="save-lyrics" data-section-id="${s.id}" title="儲存此段落所有歌詞">💾 儲存此段落歌詞</button></div>` : ''}
+                            <div><span class="lyrics-edit-hint">歌詞在編輯時修改</span></div>
                         </div>
                     `;
                 }

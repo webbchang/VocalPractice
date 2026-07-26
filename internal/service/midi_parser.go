@@ -93,6 +93,9 @@ func (p *MIDIParser) Parse(data []byte, title, artist string) (*domain.Song, err
 		return nil, ErrInvalidMIDI
 	}
 
+	// Deduplicate track names: append _2, _3, ... for duplicates
+	deduplicateTrackNames(tracks)
+
 	song := domain.NewSong(title, artist, "", tracks)
 	song.TicksPerQuarter = ticksPerQuarter
 	for _, te := range globalTempoMap {
@@ -181,6 +184,9 @@ func (p *MIDIParser) parseWithTempoMap(r *bytes.Reader, ticksPerQuarter int, glo
 	if len(tracks) == 0 {
 		return nil, ErrInvalidMIDI
 	}
+
+	// Deduplicate track names: append _2, _3, ... for duplicates
+	deduplicateTrackNames(tracks)
 
 	return &ParsedMIDIResult{
 		Tracks:          tracks,
@@ -615,4 +621,35 @@ func searchSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+// deduplicateTrackNames appends _2, _3, ... suffixes to duplicate track names.
+func deduplicateTrackNames(tracks []domain.MIDITrack) {
+	nameCount := make(map[string]int)
+	for i := range tracks {
+		baseName := tracks[i].Name
+		if baseName == "" {
+			baseName = "Track"
+		}
+		count := nameCount[baseName]
+		nameCount[baseName] = count + 1
+		if count > 0 {
+			tracks[i].Name = baseName + "_" + itoa(count+1)
+		}
+	}
+}
+
+// itoa is a simple int to string conversion (avoid importing strconv for one function).
+func itoa(n int) string {
+	if n == 0 {
+		return "0"
+	}
+	var buf [12]byte
+	i := len(buf)
+	for n > 0 {
+		i--
+		buf[i] = byte('0' + n%10)
+		n /= 10
+	}
+	return string(buf[i:])
 }

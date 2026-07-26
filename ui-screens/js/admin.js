@@ -94,9 +94,6 @@ function bindEventListeners() {
             case 'delete':
                 handleDelete(btn.dataset.id, btn.dataset.title);
                 break;
-            case 'save-lyrics':
-                handleSaveLyrics(btn.dataset.sectionId);
-                break;
             case 'add-phrase':
                 showAddPhrase(btn.dataset.sectionId);
                 break;
@@ -407,6 +404,18 @@ async function saveEdit() {
     const editLyrics = document.getElementById('edit-lyrics').value.trim();
     const trackId = document.getElementById('lyrics-track-select').value;
 
+    // 如果未選擇聲部，fallback 到第一個非空的聲部
+    let effectiveTrackId = trackId;
+    if (!effectiveTrackId) {
+        const select = document.getElementById('lyrics-track-select');
+        for (let i = 0; i < select.options.length; i++) {
+            if (select.options[i].value) {
+                effectiveTrackId = select.options[i].value;
+                break;
+            }
+        }
+    }
+
     if (!title) { alert('請輸入標題'); return; }
     if (endTime <= startTime) { alert('結束時間必須大於開始時間'); return; }
 
@@ -436,6 +445,7 @@ async function saveEdit() {
                         start_tick: startTick,
                         end_tick: endTick,
                         order_index: orderIdx,
+                        track_id: effectiveTrackId,
                         phrases: []
                     }]
                 });
@@ -545,40 +555,6 @@ async function handleDelete(id, title) {
         await onTrackChange();
     } catch (err) {
         alert('刪除失敗：' + err.message);
-    }
-}
-
-// --- 儲存段落歌詞 ---
-async function handleSaveLyrics(sectionId) {
-    const trackId = document.getElementById('lyrics-track-select').value;
-    if (!trackId) { alert('請先選擇聲部'); return; }
-    if (!currentSongId) { alert('請先選擇歌曲'); return; }
-
-    const section = structures.find(s => s.id === sectionId);
-    if (!section || !section.phrases || section.phrases.length === 0) {
-        alert('此段落沒有句子可儲存歌詞');
-        return;
-    }
-
-    const lyricsPayload = [];
-    for (const p of section.phrases) {
-        const input = document.getElementById('lyrics-' + p.id);
-        if (input && input.value.trim()) {
-            lyricsPayload.push({
-                track_id: trackId,
-                structure_id: p.id,
-                lyrics: input.value.trim()
-            });
-        }
-    }
-
-    if (lyricsPayload.length === 0) { alert('沒有歌詞需要儲存'); return; }
-
-    try {
-        const res = await SongService.saveLyrics(currentSongId, lyricsPayload);
-        alert('✅ 已儲存 ' + res.updated + '/' + res.total + ' 句歌詞');
-    } catch (err) {
-        alert('儲存歌詞失敗：' + err.message);
     }
 }
 

@@ -145,7 +145,7 @@ describe('StructureRenderer', () => {
             expect(html).toContain('data-action="add-phrase"');
         });
 
-        it('should render phrases with lyrics inputs', () => {
+        it('should render phrases with lyrics text and edit hint', () => {
             const structures = [
                 {
                     id: 's1', title: 'Verse', start_time: 0, end_time: 10, order_index: 1,
@@ -157,8 +157,9 @@ describe('StructureRenderer', () => {
             StructureRenderer.renderTree(structures, null);
             const html = document.getElementById('structure-tree').innerHTML;
             expect(html).toContain('Phrase 1');
-            expect(html).toContain('id="lyrics-p1"');
+            expect(html).toContain('class="lyrics-text"');
             expect(html).toContain('Hello');
+            expect(html).toContain('歌詞在編輯時修改');
         });
     });
 

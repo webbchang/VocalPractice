@@ -1,0 +1,1 @@
+let exporting song structure be automatic when save a change of that.   
