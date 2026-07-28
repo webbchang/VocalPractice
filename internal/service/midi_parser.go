@@ -9,8 +9,6 @@ import (
 	"sort"
 
 	"vocal-practice-app/internal/domain"
-
-	"github.com/google/uuid"
 )
 
 var (
@@ -79,7 +77,7 @@ func (p *MIDIParser) Parse(data []byte, title, artist string) (*domain.Song, err
 			continue
 		}
 		if track != nil && len(track.Notes) > 0 {
-			track.ID = uuid.New()
+			track.ID = domain.ComputeTrackID(track.Name, track.Channel, track.Notes)
 			track.MIDIIndex = int(trackIdx)
 			nameLower := toLower(track.Name)
 			if contains(nameLower, "vocal") || contains(nameLower, "voice") || contains(nameLower, "lead") || contains(nameLower, "singer") {
@@ -171,7 +169,7 @@ func (p *MIDIParser) parseWithTempoMap(r *bytes.Reader, ticksPerQuarter int, glo
 			continue
 		}
 		if track != nil && len(track.Notes) > 0 {
-			track.ID = uuid.New()
+			track.ID = domain.ComputeTrackID(track.Name, track.Channel, track.Notes)
 			track.MIDIIndex = int(trackIdx)
 			nameLower := toLower(track.Name)
 			if contains(nameLower, "vocal") || contains(nameLower, "voice") || contains(nameLower, "lead") || contains(nameLower, "singer") {
