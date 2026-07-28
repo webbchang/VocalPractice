@@ -144,6 +144,8 @@ func (s *MemoryStore) GetSongByID(id uuid.UUID) (*domain.Song, error) {
 	if !ok {
 		return nil, ErrNotFound
 	}
+	// Deduplicate track names for songs stored before the dedup fix
+	domain.DeduplicateTrackNames(song.Tracks)
 	return song, nil
 }
 

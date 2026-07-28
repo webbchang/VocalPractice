@@ -4,6 +4,10 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"vocal-practice-app/internal/domain"
+
+	"github.com/google/uuid"
 )
 
 func TestMIDIParser_ParseValidMIDI(t *testing.T) {
@@ -205,5 +209,54 @@ func TestMIDIParser_ParseReference2MID(t *testing.T) {
 	// Track 0 (conductor) should exist in Go output, may have 0 notes
 	if len(song.Tracks) > 0 {
 		t.Logf("Track 0: %q with %d notes", song.Tracks[0].Name, len(song.Tracks[0].Notes))
+	}
+}
+
+func TestDeduplicateTrackNames(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		expected []string
+	}{
+		{
+			name:     "no duplicates",
+			input:    []string{"Piano", "Vocal", "Drums"},
+			expected: []string{"Piano", "Vocal", "Drums"},
+		},
+		{
+			name:     "three duplicates",
+			input:    []string{"Piano", "Piano", "Piano"},
+			expected: []string{"Piano", "Piano_2", "Piano_3"},
+		},
+		{
+			name:     "mixed duplicates and unique",
+			input:    []string{"Piano", "Vocal", "Piano", "Drums", "Vocal"},
+			expected: []string{"Piano", "Vocal", "Piano_2", "Drums", "Vocal_2"},
+		},
+		{
+			name:     "empty names",
+			input:    []string{"", ""},
+			expected: []string{"Track", "Track_2"},
+		},
+		{
+			name:     "single track",
+			input:    []string{"Piano"},
+			expected: []string{"Piano"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tracks := make([]domain.MIDITrack, len(tt.input))
+			for i, name := range tt.input {
+				tracks[i] = domain.MIDITrack{ID: uuid.New(), Name: name}
+			}
+			domain.DeduplicateTrackNames(tracks)
+			for i, expected := range tt.expected {
+				if tracks[i].Name != expected {
+					t.Errorf("track[%d]: got %q, want %q", i, tracks[i].Name, expected)
+				}
+			}
+		})
 	}
 }

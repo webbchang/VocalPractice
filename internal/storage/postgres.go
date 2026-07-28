@@ -205,6 +205,8 @@ func scanSong(row pgx.Row) (*domain.Song, error) {
 	}
 	json.Unmarshal(tracksJSON, &s.Tracks)
 	json.Unmarshal(tempoJSON, &s.TempoMap)
+	// Deduplicate track names for songs stored before the dedup fix
+	domain.DeduplicateTrackNames(s.Tracks)
 	return s, nil
 }
 
