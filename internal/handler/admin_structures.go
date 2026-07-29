@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -402,10 +403,19 @@ func (h *AdminStructuresHandler) ExportStructures(w http.ResponseWriter, r *http
 		lyricsByStruct[l.StructureID][l.TrackID] = l.Lyrics
 	}
 
-	// Build CSV rows
-	var sb strings.Builder
-	sb.WriteString("type,title,start,end,order,track_name,lyrics\n")
+	// Group structures by track ID
+	structsByTrack := make(map[uuid.UUID][]*domain.SongStructure) // keyed by track ID
+	var noTrackStructs []*domain.SongStructure
 	for _, st := range structures {
+		if st.TrackID != nil {
+			structsByTrack[*st.TrackID] = append(structsByTrack[*st.TrackID], st)
+		} else {
+			noTrackStructs = append(noTrackStructs, st)
+		}
+	}
+
+	// Helper to write a single structure row
+	writeStructure := func(sb *strings.Builder, st *domain.SongStructure, song *domain.Song, lyricsByStruct map[uuid.UUID]map[uuid.UUID]string) {
 		tName := trackName(st.TrackID, song)
 		lyrics := ""
 		if st.TrackID != nil {
@@ -417,11 +427,79 @@ func (h *AdminStructuresHandler) ExportStructures(w http.ResponseWriter, r *http
 		if st.Type == domain.StructureTypePHRASE {
 			t = "P"
 		}
-		// Quote fields that may contain commas or quotes
 		title := strings.ReplaceAll(st.Title, "\"", "\"\"")
 		lyr := strings.ReplaceAll(lyrics, "\"", "\"\"")
 		sb.WriteString(fmt.Sprintf("%s,\"%s\",%.6f,%.6f,%d,%s,\"%s\"\n",
 			t, title, st.StartTime, st.EndTime, st.OrderIdx, tName, lyr))
+	}
+
+	// Build CSV rows grouped by track order
+	var sb strings.Builder
+	sb.WriteString("type,title,start,end,order,track_name,lyrics\n")
+
+	// 1. Output structures grouped by track (in song.Tracks order)
+	for _, track := range song.Tracks {
+		structs, ok := structsByTrack[track.ID]
+		if !ok || len(structs) == 0 {
+			continue
+		}
+
+		// Add track comment line
+		sb.WriteString(fmt.Sprintf("# Track: %s\n", track.Name))
+
+		// Split into sections and phrases
+		var sections []*domain.SongStructure
+		var phrases []*domain.SongStructure
+		for _, st := range structs {
+			if st.Type == domain.StructureTypeSECTION {
+				sections = append(sections, st)
+			} else {
+				phrases = append(phrases, st)
+			}
+		}
+
+		// Sort sections by order_index
+		sort.Slice(sections, func(i, j int) bool {
+			return sections[i].OrderIdx < sections[j].OrderIdx
+		})
+		// Sort phrases by order_index
+		sort.Slice(phrases, func(i, j int) bool {
+			return phrases[i].OrderIdx < phrases[j].OrderIdx
+		})
+
+		// Write sections first, then phrases
+		for _, st := range sections {
+			writeStructure(&sb, st, song, lyricsByStruct)
+		}
+		for _, st := range phrases {
+			writeStructure(&sb, st, song, lyricsByStruct)
+		}
+	}
+
+	// 2. Output structures with no track_id at the end
+	if len(noTrackStructs) > 0 {
+		sb.WriteString("# Track: (no track)\n")
+		var sections []*domain.SongStructure
+		var phrases []*domain.SongStructure
+		for _, st := range noTrackStructs {
+			if st.Type == domain.StructureTypeSECTION {
+				sections = append(sections, st)
+			} else {
+				phrases = append(phrases, st)
+			}
+		}
+		sort.Slice(sections, func(i, j int) bool {
+			return sections[i].OrderIdx < sections[j].OrderIdx
+		})
+		sort.Slice(phrases, func(i, j int) bool {
+			return phrases[i].OrderIdx < phrases[j].OrderIdx
+		})
+		for _, st := range sections {
+			writeStructure(&sb, st, song, lyricsByStruct)
+		}
+		for _, st := range phrases {
+			writeStructure(&sb, st, song, lyricsByStruct)
+		}
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
@@ -647,6 +725,10 @@ func parseStructureCSV(csvStr string) ([]csvEntry, error) {
 	for i := 1; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 		if line == "" {
+			continue
+		}
+		// Skip comment lines (e.g. "# Track: Vocal")
+		if line[0] == '#' {
 			continue
 		}
 		// Simple CSV parser (handles quoted fields)

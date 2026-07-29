@@ -289,16 +289,21 @@ func TestExportStructures_WithSectionsAndPhrases(t *testing.T) {
 	}
 	csv := resp["csv"].(string)
 	lines := strings.Split(strings.TrimSpace(csv), "\n")
-	if len(lines) != 3 {
-		t.Fatalf("expected 2 data lines, got %d: %s", len(lines), csv)
+	// Header + comment + 2 data lines = 4 lines
+	if len(lines) != 4 {
+		t.Fatalf("expected 4 lines (header + comment + 2 data), got %d: %s", len(lines), csv)
 	}
-	// First data line should be S,Verse A
-	if !strings.Contains(lines[1], "S") || !strings.Contains(lines[1], "Verse A") {
-		t.Fatalf("expected S type + Verse A, got %s", lines[1])
+	// Line 2 should be the comment
+	if !strings.Contains(lines[1], "# Track: (no track)") {
+		t.Fatalf("expected comment '# Track: (no track)', got %s", lines[1])
 	}
-	// Second should be P,Line 1
-	if !strings.Contains(lines[2], "P") || !strings.Contains(lines[2], "Line 1") {
-		t.Fatalf("expected P type + Line 1, got %s", lines[2])
+	// Line 3 should be S,Verse A
+	if !strings.Contains(lines[2], "S") || !strings.Contains(lines[2], "Verse A") {
+		t.Fatalf("expected S type + Verse A, got %s", lines[2])
+	}
+	// Line 4 should be P,Line 1
+	if !strings.Contains(lines[3], "P") || !strings.Contains(lines[3], "Line 1") {
+		t.Fatalf("expected P type + Line 1, got %s", lines[3])
 	}
 }
 
