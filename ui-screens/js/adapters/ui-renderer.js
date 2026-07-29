@@ -131,7 +131,11 @@ export const StructureRenderer = {
                                     <span class="lyrics-text">${escapeHtml(lyricsVal) || '（無歌詞）'}</span>
                                 </div>
                             </div>
-                            <div><span class="lyrics-edit-hint">歌詞在編輯時修改</span></div>
+                            <div>
+                                <button class="btn btn-secondary btn-sm" data-action="edit" data-id="${p.id}" data-type="PHRASE">編輯</button>
+                                <button class="btn btn-danger btn-sm" data-action="delete" data-id="${p.id}" data-title="${escapeHtml(p.title)}">刪除</button>
+                                <span class="lyrics-edit-hint">（歌詞在編輯時修改）</span>
+                            </div>
                         </div>
                     `;
                 }

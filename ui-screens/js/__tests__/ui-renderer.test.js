@@ -145,7 +145,7 @@ describe('StructureRenderer', () => {
             expect(html).toContain('data-action="add-phrase"');
         });
 
-        it('should render phrases with lyrics text and edit hint', () => {
+        it('should render phrases with lyrics text, edit/delete buttons, and edit hint', () => {
             const structures = [
                 {
                     id: 's1', title: 'Verse', start_time: 0, end_time: 10, order_index: 1,
@@ -159,6 +159,9 @@ describe('StructureRenderer', () => {
             expect(html).toContain('Phrase 1');
             expect(html).toContain('class="lyrics-text"');
             expect(html).toContain('Hello');
+            expect(html).toContain('data-action="edit"');
+            expect(html).toContain('data-action="delete"');
+            expect(html).toContain('data-type="PHRASE"');
             expect(html).toContain('歌詞在編輯時修改');
         });
     });
