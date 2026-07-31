@@ -80,7 +80,7 @@ func (p *MIDIParser) Parse(data []byte, title, artist string) (*domain.Song, err
 			track.ID = domain.ComputeTrackID(track.Name, track.Channel, track.Notes)
 			track.MIDIIndex = int(trackIdx)
 			nameLower := toLower(track.Name)
-			if contains(nameLower, "vocal") || contains(nameLower, "voice") || contains(nameLower, "lead") || contains(nameLower, "singer") {
+			if contains(nameLower, "vocal") || contains(nameLower, "voice") || contains(nameLower, "lead") || contains(nameLower, "singer") || contains(nameLower, "sop") || contains(nameLower, "alt") || contains(nameLower, "ten") || contains(nameLower, "bas") {
 				track.IsVocal = true
 			}
 			tracks = append(tracks, *track)
@@ -172,7 +172,7 @@ func (p *MIDIParser) parseWithTempoMap(r *bytes.Reader, ticksPerQuarter int, glo
 			track.ID = domain.ComputeTrackID(track.Name, track.Channel, track.Notes)
 			track.MIDIIndex = int(trackIdx)
 			nameLower := toLower(track.Name)
-			if contains(nameLower, "vocal") || contains(nameLower, "voice") || contains(nameLower, "lead") || contains(nameLower, "singer") {
+			if contains(nameLower, "vocal") || contains(nameLower, "voice") || contains(nameLower, "lead") || contains(nameLower, "singer") || contains(nameLower, "sop") || contains(nameLower, "alt") || contains(nameLower, "ten") || contains(nameLower, "bas") {
 				track.IsVocal = true
 			}
 			tracks = append(tracks, *track)
