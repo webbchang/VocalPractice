@@ -62,7 +62,7 @@ export function playRange(startTime, endTime) {
             return -1;
         })
         .filter(idx => idx >= 0);
-    const playableTrackIndices = [parsedTrackIndex, ...accompanimentTrackIndices].filter(idx => idx >= 0);
+    const playableTrackIndices = [...accompanimentTrackIndices].filter(idx => idx >= 0);
 
     const rangeNotes = parsedNotes.filter(n =>
         n.start >= startTime && n.start < endTime &&
@@ -119,7 +119,7 @@ export function playRangeDelayed(startTime, endTime, startDelay) {
             return -1;
         })
         .filter(idx => idx >= 0);
-    const playableTrackIndices = [parsedTrackIndex, ...accompanimentTrackIndices].filter(idx => idx >= 0);
+    const playableTrackIndices = [...accompanimentTrackIndices].filter(idx => idx >= 0);
 
     const rangeNotes = parsedNotes.filter(n =>
         n.start >= startTime && n.start < endTime &&
