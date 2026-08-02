@@ -37,11 +37,14 @@ COPY --from=builder /build/js ./js
 # Create uploads directory for runtime data
 RUN mkdir -p /app/uploads && chown -R appuser:appgroup /app
 
+# Create TLS directory for certificates (mounted via volume)
+RUN mkdir -p /app/tls && chown -R appuser:appgroup /app
+
 # Switch to non-root user
 USER appuser
 
-# Expose the application port
-EXPOSE 8080
+# Expose the application ports (HTTP and HTTPS)
+EXPOSE 8080 8443
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \

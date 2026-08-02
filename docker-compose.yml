@@ -7,13 +7,21 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8080:8080"
+      - "8443:8443"
     environment:
       - JWT_SECRET=${JWT_SECRET:-change-me-to-a-real-secret}
       # Uncomment the line below to use PostgreSQL instead of in-memory store
       # - DATABASE_URL=postgres://vocaluser:vocalpass@db:5432/vocalpractice
       - UPLOAD_DIR=/app/uploads
+      # HTTPS configuration - set TLS_CERT and TLS_KEY to enable HTTPS
+      # - TLS_CERT=/app/tls/server.crt
+      # - TLS_KEY=/app/tls/server.key
+      # - HTTPS_PORT=:8443
+      # - REDIRECT_HTTP_TO_HTTPS=true
     volumes:
       - uploads_data:/app/uploads
+      # Mount TLS certificates for HTTPS (uncomment when using HTTPS)
+      # - ./tls:/app/tls:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]

@@ -28,6 +28,16 @@ func main() {
 		log.Fatal("JWT_SECRET environment variable is required")
 	}
 
+	// HTTPS configuration via environment variables
+	tlsCert := os.Getenv("TLS_CERT")
+	tlsKey := os.Getenv("TLS_KEY")
+	httpsPort := os.Getenv("HTTPS_PORT")
+	if httpsPort == "" {
+		httpsPort = ":8443"
+	}
+	// If TLS is enabled, optionally redirect HTTP traffic to HTTPS
+	redirectHTTP := os.Getenv("REDIRECT_HTTP_TO_HTTPS") == "true"
+
 	// Ensure upload directory exists
 	absUploadDir, err := filepath.Abs(uploadDir)
 	if err != nil {
@@ -166,9 +176,29 @@ func main() {
 	filesDir := filepath.Join(workDir, ".")
 	r.Handle("/*", http.FileServer(http.Dir(filesDir)))
 
-	fmt.Printf("Vocal Practice App server starting on %s\n", port)
 	fmt.Printf("Upload directory: %s\n", absUploadDir)
-	log.Fatal(http.ListenAndServe(port, r))
+
+	// Start server with HTTPS if TLS cert/key are provided, otherwise HTTP
+	if tlsCert != "" && tlsKey != "" {
+		fmt.Printf("Vocal Practice App server starting on %s (HTTPS)\n", httpsPort)
+		if redirectHTTP {
+			// Start HTTP server that redirects to HTTPS
+			go func() {
+				redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					host := req.Host
+					// Replace the HTTP port with the HTTPS port
+					redirectURL := "https://" + host + req.URL.RequestURI()
+					http.Redirect(w, req, redirectURL, http.StatusMovedPermanently)
+				})
+				fmt.Printf("HTTP redirect server starting on %s -> %s\n", port, httpsPort)
+				log.Fatal(http.ListenAndServe(port, redirectHandler))
+			}()
+		}
+		log.Fatal(http.ListenAndServeTLS(httpsPort, tlsCert, tlsKey, r))
+	} else {
+		fmt.Printf("Vocal Practice App server starting on %s (HTTP)\n", port)
+		log.Fatal(http.ListenAndServe(port, r))
+	}
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

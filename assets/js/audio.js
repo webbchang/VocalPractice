@@ -157,7 +157,12 @@ export function stopPlayback() {
 
 export function togglePlayback() {
     const { selectedStructure } = state;
-    if (isPlaying) { stopPlayback(); return; }
+    if (isPlaying) {
+        stopPlayback();
+        // 觸發中斷回呼（練習中斷時丟棄錄音）
+        triggerInterrupt();
+        return;
+    }
     if (selectedStructure) {
         playRange(selectedStructure.start, selectedStructure.end);
     } else {
@@ -174,4 +179,15 @@ let updatePlayBtn = () => {};
 
 export function setUpdatePlayBtn(fn) {
     updatePlayBtn = fn;
+}
+
+// 中斷回呼：當使用者手動停止播放時觸發（用於中斷練習）
+let onInterruptCallback = null;
+
+export function setOnInterruptCallback(fn) {
+    onInterruptCallback = fn;
+}
+
+export function triggerInterrupt() {
+    if (onInterruptCallback) onInterruptCallback();
 }

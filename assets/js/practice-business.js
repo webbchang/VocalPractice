@@ -466,10 +466,16 @@ export function playRangeWithBeats(sectionStart, sectionEnd, withRecording = fal
  */
 let mediaRecorder = null;
 let recordedChunks = [];
+let practiceTimerInterval = null;
+let practiceEndTimer = null;
+let isPracticeActive = false;
 
 function startMediaRecorder() {
     if (mediaRecorder && mediaRecorder.state === 'recording') return;
     recordedChunks = [];
+    if (!window.isSecureContext) {
+        console.warn('Not a secure context — getUserMedia may be blocked. Use localhost or HTTPS.');
+    }
     navigator.mediaDevices.getUserMedia({ audio: true })
         .then(stream => {
             mediaRecorder = new MediaRecorder(stream);
@@ -482,19 +488,79 @@ function startMediaRecorder() {
         })
         .catch(err => {
             console.error('Failed to start recording:', err);
+            alert('無法存取麥克風。請確認已允許麥克風權限，並使用 localhost 或 HTTPS 連線。');
         });
 }
 
 export function stopMediaRecorder() {
-    if (mediaRecorder && mediaRecorder.state === 'recording') {
-        mediaRecorder.stop();
-        try {
-            mediaRecorder.stream.getTracks().forEach(t => t.stop());
-        } catch (e) {
-            // stream may already be stopped
+    return new Promise((resolve) => {
+        if (mediaRecorder && mediaRecorder.state === 'recording') {
+            mediaRecorder.onstop = () => {
+                try {
+                    mediaRecorder.stream.getTracks().forEach(t => t.stop());
+                } catch (e) {
+                    // stream may already be stopped
+                }
+                mediaRecorder = null;
+                resolve();
+            };
+            mediaRecorder.stop();
+        } else {
+            mediaRecorder = null;
+            resolve();
         }
+    });
+}
+
+/**
+ * 清除練習狀態：timer、end timer、錄音
+ * @param {boolean} discardRecording - 是否丟棄錄音資料
+ */
+function cleanupPractice(discardRecording = false) {
+    if (practiceTimerInterval) {
+        // practiceTimerInterval 可能是 setTimeout 或 setInterval 的 ID
+        clearTimeout(practiceTimerInterval);
+        clearInterval(practiceTimerInterval);
+        practiceTimerInterval = null;
     }
-    mediaRecorder = null;
+    if (practiceEndTimer) {
+        clearTimeout(practiceEndTimer);
+        practiceEndTimer = null;
+    }
+    isPracticeActive = false;
+    const stopPromise = stopMediaRecorder();
+    if (discardRecording) {
+        recordedChunks = [];
+    }
+    // Timer 歸零
+    const timerEl = document.getElementById('timer');
+    if (timerEl) timerEl.textContent = '00:00';
+    return stopPromise;
+}
+
+/**
+ * 顯示回放錄音按鈕（練習結束後）
+ */
+function showReplayButton() {
+    const chartArea = document.getElementById('chart-area');
+    if (!chartArea) return;
+    if (recordedChunks.length === 0) return;
+
+    const replayBtn = document.createElement('button');
+    replayBtn.className = 'btn btn-sm btn-success';
+    replayBtn.style.cssText = 'margin-top:16px;padding:10px 20px;font-size:14px;';
+    replayBtn.textContent = '🔁 回放錄音';
+    replayBtn.onclick = () => {
+        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audio.onended = () => {
+            URL.revokeObjectURL(url);
+            replayBtn.textContent = '🔁 再次回放';
+        };
+        audio.play();
+    };
+    chartArea.appendChild(replayBtn);
 }
 
 /**
@@ -533,6 +599,59 @@ export function startPractice() {
         </div>
     `;
     console.log('Reference notes for comparison:', referenceNotes);
+
+    // 清除之前的練習狀態
+    cleanupPractice(true);
+
+    // 計算練習時間參數（與 playRangeWithBeats 一致）
+    const duration = selectedStructure.end - selectedStructure.start;
+    const { firstNoteTime, beatInterval } = getTimingInfo(selectedStructure.start, selectedStructure.end);
+    const minAccDelay = Math.max(2 * beatInterval + 0.25 - firstNoteTime, 0.1);
+    const accDelay = minAccDelay;
+    // 錄音開始時間（250ms 前於第一個音符）
+    const recStartDelay = accDelay + firstNoteTime - 0.25;
+    // 練習結束時間 = 錄音開始 + 練習範圍時長
+    const practiceTotalMs = (recStartDelay + duration) * 1000;
+
+    // 啟動秒數動畫（倒數計時）— 在錄音開始時啟動
+    const timerEl = document.getElementById('timer');
+    if (timerEl) timerEl.textContent = formatTime(duration);
+    let remaining = duration;
+    practiceTimerInterval = setTimeout(() => {
+        practiceTimerInterval = setInterval(() => {
+            remaining -= 0.1;
+            if (remaining <= 0) {
+                remaining = 0;
+            }
+            if (timerEl) timerEl.textContent = formatTime(remaining);
+        }, 100);
+    }, Math.max(0, recStartDelay * 1000));
+
+    // 設定練習結束時間
+    isPracticeActive = true;
+    practiceEndTimer = setTimeout(() => {
+        cleanupPractice(false).then(() => { // 保留錄音，等待 MediaRecorder onstop 完成
+            // 顯示回放按鈕
+            showReplayButton();
+            document.getElementById('status-text').textContent = '練習完成';
+        });
+    }, practiceTotalMs);
+
     // Auto-play the range with beats + recording
     playRangeWithBeats(selectedStructure.start, selectedStructure.end, true);
+}
+
+/**
+ * 中斷練習：停止播放、停止錄音、丟棄錄音資料、timer 歸零
+ */
+export function interruptPractice() {
+    cleanupPractice(true); // 丟棄錄音
+    stopPlayback();
+    document.getElementById('status-text').textContent = '準備就緒';
+    document.getElementById('chart-area').innerHTML = `
+        <div>
+            <div style="font-size:48px;margin-bottom:12px;">🎵</div>
+            <div>練習已中斷</div>
+        </div>
+    `;
 }
