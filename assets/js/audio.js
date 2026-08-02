@@ -223,6 +223,15 @@ export function setUpdatePlayBtn(fn) {
     updatePlayBtn = fn;
 }
 
+// replayAudio 存儲當前回放的音頻對象
+export function getReplayAudio() {
+    return replayAudio;
+}
+
+export function setReplayAudio(audio) {
+    replayAudio = audio;
+}
+
 // 中斷回呼：當使用者手動停止播放時觸發（用於中斷練習）
 let onInterruptCallback = null;
 
