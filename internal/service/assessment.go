@@ -1,0 +1,309 @@
+package service
+
+import (
+	"math"
+	"sort"
+
+	"vocal-practice-app/internal/domain"
+)
+
+// MIDINoteForAssessment is a local type for assessment processing
+type MIDINoteForAssessment struct {
+	Pitch     int
+	StartTime float64
+	EndTime   float64
+}
+
+// MergedNoteForAssessment groups consecutive same-pitch notes
+type MergedNoteForAssessment struct {
+	Pitch     int
+	StartTime float64
+	EndTime   float64
+	EventIdx  []int
+}
+
+// AssessmentResultForAssessment is the result of pitch assessment
+type AssessmentResultForAssessment struct {
+	Score                    int
+	TotalNotes               int
+	MatchedNotes             int
+	AveragePitchDeviation    float64
+	AverageDurationDeviation float64
+	PitchDeviation           []float64
+	DurationDeviation        []float64
+	NoteComparison           []domain.NoteComparison
+}
+
+// AssessRecordingWithVowelFiltering performs pitch assessment on user's recording
+// but only analyzes vowel portions of the detected notes (ignoring consonants)
+func AssessRecordingWithVowelFiltering(
+	samples []float64,
+	sampleRate int,
+	referenceNotes []domain.MIDINote,
+) (*AssessmentResultForAssessment, error) {
+	if len(referenceNotes) == 0 {
+		return &AssessmentResultForAssessment{
+			Score:        0,
+			TotalNotes:   0,
+			MatchedNotes: 0,
+		}, nil
+	}
+
+	// Convert domain.MIDINote to local type
+	refNotes := make([]MIDINoteForAssessment, len(referenceNotes))
+	for i, n := range referenceNotes {
+		refNotes[i] = MIDINoteForAssessment{
+			Pitch:     n.Pitch,
+			StartTime: n.StartTime,
+			EndTime:   n.EndTime,
+		}
+	}
+
+	// Step 1: Detect all pitches from the recording
+	allDetectedNotes := detectPitchGo(samples, sampleRate)
+
+	// Step 2: Filter detected notes to only include vowel portions
+	separator := NewVowelConsonantSeparator()
+	vowelNotes, err := separator.GetVowelOnlyNotes(samples, sampleRate, allDetectedNotes)
+	if err != nil {
+		return nil, err
+	}
+
+	// Convert vowel notes to MIDINoteForAssessment
+	vowelNotesForAssessment := make([]MIDINoteForAssessment, len(vowelNotes))
+	for i, n := range vowelNotes {
+		vowelNotesForAssessment[i] = MIDINoteForAssessment{
+			Pitch:     n.Pitch,
+			StartTime: n.StartTime,
+			EndTime:   n.EndTime,
+		}
+	}
+
+	// Step 3: Merge same-pitch reference notes
+	mergedRef := mergeSamePitchNotesForAssessment(refNotes)
+
+	// Step 4: Compare merged reference vs vowel-only detected notes
+	result := compareMergedNotesForAssessment(refNotes, mergedRef, vowelNotesForAssessment)
+
+	return result, nil
+}
+
+// AssessRecording performs pitch assessment on user's recording (original method without vowel filtering)
+func AssessRecording(
+	samples []float64,
+	sampleRate int,
+	referenceNotes []domain.MIDINote,
+) (*AssessmentResultForAssessment, error) {
+	if len(referenceNotes) == 0 {
+		return &AssessmentResultForAssessment{
+			Score:        0,
+			TotalNotes:   0,
+			MatchedNotes: 0,
+		}, nil
+	}
+
+	// Convert domain.MIDINote to local type
+	refNotes := make([]MIDINoteForAssessment, len(referenceNotes))
+	for i, n := range referenceNotes {
+		refNotes[i] = MIDINoteForAssessment{
+			Pitch:     n.Pitch,
+			StartTime: n.StartTime,
+			EndTime:   n.EndTime,
+		}
+	}
+
+	// Step 1: Detect all pitches from the recording
+	allDetectedNotes := detectPitchGo(samples, sampleRate)
+
+	// Convert detected notes to MIDINoteForAssessment
+	detectedNotes := make([]MIDINoteForAssessment, len(allDetectedNotes))
+	for i, n := range allDetectedNotes {
+		detectedNotes[i] = MIDINoteForAssessment{
+			Pitch:     n.Pitch,
+			StartTime: n.StartTime,
+			EndTime:   n.EndTime,
+		}
+	}
+
+	// Step 2: Merge same-pitch reference notes
+	mergedRef := mergeSamePitchNotesForAssessment(refNotes)
+
+	// Step 3: Compare merged reference vs detected notes
+	result := compareMergedNotesForAssessment(refNotes, mergedRef, detectedNotes)
+
+	return result, nil
+}
+
+// mergeSamePitchNotesForAssessment groups consecutive same-pitch notes
+func mergeSamePitchNotesForAssessment(notes []MIDINoteForAssessment) []MergedNoteForAssessment {
+	if len(notes) == 0 {
+		return nil
+	}
+
+	sorted := make([]MIDINoteForAssessment, len(notes))
+	copy(sorted, notes)
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].StartTime < sorted[j].StartTime
+	})
+
+	sortedToOrig := make([]int, len(sorted))
+	for i, s := range sorted {
+		for j, o := range notes {
+			if s.StartTime == o.StartTime && s.EndTime == o.EndTime && s.Pitch == o.Pitch {
+				sortedToOrig[i] = j
+				break
+			}
+		}
+	}
+
+	var merged []MergedNoteForAssessment
+	current := MergedNoteForAssessment{
+		Pitch:     sorted[0].Pitch,
+		StartTime: sorted[0].StartTime,
+		EndTime:   sorted[0].EndTime,
+		EventIdx:  []int{sortedToOrig[0]},
+	}
+
+	gapThreshold := 0.05
+
+	for i := 1; i < len(sorted); i++ {
+		n := sorted[i]
+		gap := n.StartTime - current.EndTime
+		if n.Pitch == current.Pitch && gap >= 0 && gap <= gapThreshold {
+			if n.EndTime > current.EndTime {
+				current.EndTime = n.EndTime
+			}
+			current.EventIdx = append(current.EventIdx, sortedToOrig[i])
+		} else {
+			merged = append(merged, current)
+			current = MergedNoteForAssessment{
+				Pitch:     n.Pitch,
+				StartTime: n.StartTime,
+				EndTime:   n.EndTime,
+				EventIdx:  []int{sortedToOrig[i]},
+			}
+		}
+	}
+	merged = append(merged, current)
+
+	return merged
+}
+
+// compareMergedNotesForAssessment compares merged reference notes against detected notes
+func compareMergedNotesForAssessment(
+	allRefs []MIDINoteForAssessment,
+	merged []MergedNoteForAssessment,
+	detected []MIDINoteForAssessment,
+) *AssessmentResultForAssessment {
+	detSorted := make([]MIDINoteForAssessment, len(detected))
+	copy(detSorted, detected)
+	sort.Slice(detSorted, func(i, j int) bool {
+		return detSorted[i].StartTime < detSorted[j].StartTime
+	})
+
+	matched := make([]domain.NoteComparison, len(allRefs))
+	for i := range matched {
+		matched[i] = domain.NoteComparison{
+			RefPitch:    allRefs[i].Pitch,
+			RefStart:    allRefs[i].StartTime,
+			RefEnd:      allRefs[i].EndTime,
+			MatchStatus: "missed",
+		}
+	}
+
+	usedDetected := make(map[int]bool)
+	matchedCount := 0
+	totalPitchDev := 0.0
+	totalDurationDev := 0.0
+
+	for _, mg := range merged {
+		mgLen := mg.EndTime - mg.StartTime
+		bestIdx := -1
+		bestOverlap := 0.0
+
+		for i, det := range detSorted {
+			if usedDetected[i] {
+				continue
+			}
+			if det.Pitch != mg.Pitch {
+				continue
+			}
+
+			overlapStart := math.Max(mg.StartTime, det.StartTime)
+			overlapEnd := math.Min(mg.EndTime, det.EndTime)
+			if overlapEnd <= overlapStart {
+				continue
+			}
+			overlapLen := overlapEnd - overlapStart
+
+			detLen := det.EndTime - det.StartTime
+			shorterLen := mgLen
+			if detLen < shorterLen {
+				shorterLen = detLen
+			}
+			if shorterLen <= 0 {
+				continue
+			}
+			ratio := overlapLen / shorterLen
+			if ratio > bestOverlap {
+				bestOverlap = ratio
+				bestIdx = i
+			}
+		}
+
+		if bestIdx >= 0 && bestOverlap >= 0.8 {
+			usedDetected[bestIdx] = true
+			det := detSorted[bestIdx]
+
+			detLen := det.EndTime - det.StartTime
+			pitchDev := float64(mg.Pitch-det.Pitch) * 100.0
+			durDev := mgLen - detLen
+
+			for _, eidx := range mg.EventIdx {
+				matched[eidx].UserPitch = det.Pitch
+				matched[eidx].UserStart = det.StartTime
+				matched[eidx].UserEnd = det.EndTime
+				matched[eidx].PitchDeviationCents = pitchDev
+				matched[eidx].DurationDeviationSec = durDev
+				matched[eidx].MatchStatus = "matched"
+			}
+
+			matchedCount += len(mg.EventIdx)
+			totalPitchDev += math.Abs(pitchDev) * float64(len(mg.EventIdx))
+			totalDurationDev += math.Abs(durDev) * float64(len(mg.EventIdx))
+		}
+	}
+
+	avgPitchDev := 0.0
+	avgDurationDev := 0.0
+	if matchedCount > 0 {
+		avgPitchDev = totalPitchDev / float64(matchedCount)
+		avgDurationDev = totalDurationDev / float64(matchedCount)
+	}
+
+	pitchScore := math.Max(0, 100.0-avgPitchDev*0.5)
+	durationScore := math.Max(0, 100.0-avgDurationDev*50.0)
+	overallScore := pitchScore*0.7 + durationScore*0.3
+
+	if matchedCount == 0 {
+		overallScore = 0
+	}
+
+	pitchDeviations := make([]float64, len(matched))
+	durationDeviations := make([]float64, len(matched))
+	for i, m := range matched {
+		pitchDeviations[i] = m.PitchDeviationCents
+		durationDeviations[i] = m.DurationDeviationSec
+	}
+
+	return &AssessmentResultForAssessment{
+		Score:                    int(math.Round(overallScore)),
+		TotalNotes:               len(allRefs),
+		MatchedNotes:             matchedCount,
+		AveragePitchDeviation:    math.Round(avgPitchDev*10) / 10,
+		AverageDurationDeviation: math.Round(avgDurationDev*100) / 100,
+		PitchDeviation:           pitchDeviations,
+		DurationDeviation:        durationDeviations,
+		NoteComparison:           matched,
+	}
+}
