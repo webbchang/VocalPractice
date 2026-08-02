@@ -27,6 +27,7 @@ Thumbs.db
 # Test data
 test_data/
 output/
+uploads_test/
 
 # TLS certificates
 tls/
