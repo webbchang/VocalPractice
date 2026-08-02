@@ -451,13 +451,15 @@ export function playRangeWithBeats(sectionStart, sectionEnd, withRecording = fal
     // Play accompaniment with delay so the first note lands at firstNoteAbsTime
     playRangeDelayed(sectionStart, sectionEnd, accDelay);
 
-    // Start recording from the beginning of count-in (metronome beats)
-    // Will trim the first 0.25 seconds later to skip the click sound
+    // Start recording from Beat 1 of the count-in (metronome beats)
+    // Beat 1 time = accDelay + firstNoteTime - 2*beatInterval - 0.25
+    // Will trim the first 2*beatInterval + 0.25 seconds later to skip all beats
     if (withRecording) {
-        const recDelay = (accDelay) * 1000;
+        const beat1Time = accDelay + firstNoteTime - 2 * beatInterval - 0.25;
+        const recDelay = Math.max(0, beat1Time) * 1000;
         setTimeout(() => {
             startMediaRecorder();
-        }, Math.max(0, recDelay));
+        }, recDelay);
     }
 }
 
@@ -658,10 +660,9 @@ export function startPractice() {
     const minAccDelay = Math.max(2 * beatInterval + 0.25 - firstNoteTime, 0.1);
     const accDelay = minAccDelay;
     // 錄音開始時間（從第一個提示音 Beat 1 開始）
-    const recStartDelay = accDelay;
-    // 截除偏移：從錄音開始到最後一個提示音 Beat 3 結束
-    // Beat 3 時間 = accDelay + 2*beatInterval + 0.25（從現在開始計算）
-    // 但錄音是從 accDelay 開始，所以截除偏移 = 2*beatInterval + 0.25
+    const beat1Time = Math.max(0, accDelay + firstNoteTime - 2 * beatInterval - 0.25);
+    const recStartDelay = beat1Time;
+    // 截除偏移：從 Beat 1 到 Beat 3 結束的時間
     const recordingTrimOffset = 2 * beatInterval + 0.25;
     // 練習結束時間 = 錄音開始 + 截除偏移 + 練習範圍時長
     const practiceTotalMs = (recStartDelay + recordingTrimOffset + duration) * 1000;
