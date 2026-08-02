@@ -451,9 +451,10 @@ export function playRangeWithBeats(sectionStart, sectionEnd, withRecording = fal
     // Play accompaniment with delay so the first note lands at firstNoteAbsTime
     playRangeDelayed(sectionStart, sectionEnd, accDelay);
 
-    // Start recording 250ms before the first note of the section
+    // Start recording from the beginning of count-in (metronome beats)
+    // Will trim the first 0.25 seconds later to skip the click sound
     if (withRecording) {
-        const recDelay = (accDelay + firstNoteTime - 0.25) * 1000;
+        const recDelay = (accDelay) * 1000;
         setTimeout(() => {
             startMediaRecorder();
         }, Math.max(0, recDelay));
@@ -566,11 +567,18 @@ function showReplayButton() {
         const audio = new Audio(url);
         
         // 設置回放音頻引用
-        setSetReplayAudio(() => audio);
+        setSetReplayAudio(audio);
+        
+        audio.onloadedmetadata = () => {
+            // 從錄音截除點之後開始播放，截掉所有提示音（Beat 1, 2, 3）
+            const { beatInterval } = getTimingInfo(state.selectedStructure.start, state.selectedStructure.end);
+            const trimOffset = 2 * beatInterval + 0.25;
+            audio.currentTime = trimOffset;
+        };
         
         audio.onended = () => {
             URL.revokeObjectURL(url);
-            setSetReplayAudio(() => {});
+            setSetReplayAudio(null);
             replayBtn.textContent = '🔁 再次回放';
             replayBtn.disabled = false;
             stopReplayBtn.style.display = 'none';
@@ -586,7 +594,7 @@ function showReplayButton() {
 
     stopReplayBtn.onclick = () => {
         stopReplay();
-        setSetReplayAudio(() => {});
+        setSetReplayAudio(null);
         replayBtn.textContent = '🔁 再次回放';
         replayBtn.disabled = false;
         stopReplayBtn.style.display = 'none';
@@ -649,12 +657,16 @@ export function startPractice() {
     const { firstNoteTime, beatInterval } = getTimingInfo(selectedStructure.start, selectedStructure.end);
     const minAccDelay = Math.max(2 * beatInterval + 0.25 - firstNoteTime, 0.1);
     const accDelay = minAccDelay;
-    // 錄音開始時間（250ms 前於第一個音符）
-    const recStartDelay = accDelay + firstNoteTime - 0.25;
-    // 練習結束時間 = 錄音開始 + 練習範圍時長
-    const practiceTotalMs = (recStartDelay + duration) * 1000;
+    // 錄音開始時間（從第一個提示音 Beat 1 開始）
+    const recStartDelay = accDelay;
+    // 截除偏移：從錄音開始到最後一個提示音 Beat 3 結束
+    // Beat 3 時間 = accDelay + 2*beatInterval + 0.25（從現在開始計算）
+    // 但錄音是從 accDelay 開始，所以截除偏移 = 2*beatInterval + 0.25
+    const recordingTrimOffset = 2 * beatInterval + 0.25;
+    // 練習結束時間 = 錄音開始 + 截除偏移 + 練習範圍時長
+    const practiceTotalMs = (recStartDelay + recordingTrimOffset + duration) * 1000;
 
-    // 啟動秒數動畫（倒數計時）— 在錄音開始時啟動
+    // 啟動秒數動畫（倒數計時）— 從錄音截除後開始計時
     const timerEl = document.getElementById('timer');
     if (timerEl) timerEl.textContent = formatTime(duration);
     let remaining = duration;
@@ -666,9 +678,9 @@ export function startPractice() {
             }
             if (timerEl) timerEl.textContent = formatTime(remaining);
         }, 100);
-    }, Math.max(0, recStartDelay * 1000));
+    }, Math.max(0, (recStartDelay + recordingTrimOffset) * 1000));
 
-    // 設定練習結束時間
+    // 設定練習結束時間（錄音結束後仍繼續錄到練習結束）
     isPracticeActive = true;
     practiceEndTimer = setTimeout(() => {
         cleanupPractice(false).then(() => { // 保留錄音，等待 MediaRecorder onstop 完成
