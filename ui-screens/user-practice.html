@@ -117,6 +117,11 @@
                     <div class="lyrics-placeholder">選擇段落或句子以顯示歌詞</div>
                 </div>
             </div>
+
+            <!-- 提示訊息 -->
+            <div class="warning-panel" id="warning-panel" style="display:none;margin-top:12px;padding:10px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;color:#856404;font-size:13px;">
+                ⚠️ 重新練習時，錄音就會被覆蓋。
+            </div>
         </div>
     </div>
 
@@ -131,7 +136,7 @@
         import { playRange, togglePlayback, stopPlayback, getIsPlaying, setOnInterruptCallback } from '../assets/js/audio.js';
         import {
             selectTrack, selectStructure, onSongChange,
-            toggleAccompanimentTrack, startPractice, playRangeWithBeats, interruptPractice
+            toggleAccompanimentTrack, startPractice, playRangeWithBeats, interruptPractice, stopReplayPlayback
         } from '../assets/js/practice-business.js';
         import {
             renderVocalTracks, renderAccompanimentTracks, renderStructureList,
@@ -157,12 +162,24 @@
         window.clearSelection = clearSelection;
         window.switchTab = switchTab;
         window.logout = logout;
+        window.stopReplayPlayback = stopReplayPlayback;
 
         // 暴露 playRangeWithBeats 給 inline onclick（段落/句子的 ▶️ 按鈕）
         window.playRangeWithBeats = playRangeWithBeats;
 
         // 設定中斷回呼：使用者手動停止播放時，中斷練習並丟棄錄音
         setOnInterruptCallback(interruptPractice);
+
+        // 顯示/隱藏覆蓋提示訊息
+        const warningPanel = document.getElementById('warning-panel');
+        function updateWarningVisibility() {
+            if (recordedChunks && recordedChunks.length > 0 && !isPracticeActive) {
+                warningPanel.style.display = 'block';
+            } else {
+                warningPanel.style.display = 'none';
+            }
+        }
+        window.updateWarningVisibility = updateWarningVisibility;
 
         // 也暴露 bridge 名稱（UI 模板中使用的 window.__ 開頭函式）
         window.__selectTrack = selectTrack;

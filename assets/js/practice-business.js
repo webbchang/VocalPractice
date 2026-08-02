@@ -4,7 +4,7 @@
 
 import state from './state.js';
 import { api, loadMIDI, loadStructures } from './api.js';
-import { getAudioCtx, playRange, playRangeDelayed, stopPlayback, scheduleBeats } from './audio.js';
+import { getAudioCtx, playRange, playRangeDelayed, stopPlayback, stopReplay, getIsReplaying, setSetReplayAudio, scheduleBeats } from './audio.js';
 
 function determineParsedTrackIndex() {
     const { currentSongFull, selectedTrackId } = state;
@@ -546,21 +546,62 @@ function showReplayButton() {
     if (!chartArea) return;
     if (recordedChunks.length === 0) return;
 
+    // 創建按鈕容器
+    const btnContainer = document.createElement('div');
+    btnContainer.style.cssText = 'margin-top:16px;display:flex;gap:8px;align-items:center;';
+
     const replayBtn = document.createElement('button');
     replayBtn.className = 'btn btn-sm btn-success';
-    replayBtn.style.cssText = 'margin-top:16px;padding:10px 20px;font-size:14px;';
+    replayBtn.style.cssText = 'padding:10px 20px;font-size:14px;';
     replayBtn.textContent = '🔁 回放錄音';
+
+    const stopReplayBtn = document.createElement('button');
+    stopReplayBtn.className = 'btn btn-sm btn-danger';
+    stopReplayBtn.style.cssText = 'padding:10px 16px;font-size:14px;display:none;';
+    stopReplayBtn.textContent = '⏹ 中斷回放';
+
     replayBtn.onclick = () => {
         const blob = new Blob(recordedChunks, { type: 'audio/webm' });
         const url = URL.createObjectURL(blob);
         const audio = new Audio(url);
+        
+        // 設置回放音頻引用
+        setSetReplayAudio(() => audio);
+        
         audio.onended = () => {
             URL.revokeObjectURL(url);
+            setSetReplayAudio(() => {});
             replayBtn.textContent = '🔁 再次回放';
+            replayBtn.disabled = false;
+            stopReplayBtn.style.display = 'none';
         };
+        
+        audio.onplay = () => {
+            stopReplayBtn.style.display = 'inline-block';
+            replayBtn.disabled = true;
+        };
+        
         audio.play();
     };
-    chartArea.appendChild(replayBtn);
+
+    stopReplayBtn.onclick = () => {
+        stopReplay();
+        setSetReplayAudio(() => {});
+        replayBtn.textContent = '🔁 再次回放';
+        replayBtn.disabled = false;
+        stopReplayBtn.style.display = 'none';
+    };
+
+    btnContainer.appendChild(replayBtn);
+    btnContainer.appendChild(stopReplayBtn);
+    chartArea.appendChild(btnContainer);
+}
+
+/**
+ * 停止回放錄音
+ */
+export function stopReplayPlayback() {
+    stopReplay();
 }
 
 /**
@@ -634,6 +675,10 @@ export function startPractice() {
             // 顯示回放按鈕
             showReplayButton();
             document.getElementById('status-text').textContent = '練習完成';
+            // 顯示覆蓋提示訊息
+            if (window.updateWarningVisibility) {
+                window.updateWarningVisibility();
+            }
         });
     }, practiceTotalMs);
 
@@ -647,6 +692,7 @@ export function startPractice() {
 export function interruptPractice() {
     cleanupPractice(true); // 丟棄錄音
     stopPlayback();
+    stopReplay(); // 也停止回放
     document.getElementById('status-text').textContent = '準備就緒';
     document.getElementById('chart-area').innerHTML = `
         <div>
@@ -654,4 +700,8 @@ export function interruptPractice() {
             <div>練習已中斷</div>
         </div>
     `;
+    // 更新提示訊息可見性
+    if (window.updateWarningVisibility) {
+        window.updateWarningVisibility();
+    }
 }

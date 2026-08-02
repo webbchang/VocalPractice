@@ -7,6 +7,7 @@ let audioCtx = null;
 let playbackNodes = [];
 let playbackTimer = null;
 let isPlaying = false;
+let replayAudio = null; // Track current replay audio
 
 export function getAudioCtx() {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -155,6 +156,18 @@ export function stopPlayback() {
     updatePlayBtn();
 }
 
+export function stopReplay() {
+    if (replayAudio) {
+        replayAudio.pause();
+        replayAudio.currentTime = 0;
+        replayAudio = null;
+    }
+}
+
+export function getIsReplaying() {
+    return replayAudio !== null;
+}
+
 export function togglePlayback() {
     const { selectedStructure } = state;
     if (isPlaying) {
@@ -179,6 +192,13 @@ let updatePlayBtn = () => {};
 
 export function setUpdatePlayBtn(fn) {
     updatePlayBtn = fn;
+}
+
+// setReplayAudio 用於設置當前回放的音頻對象（從外部調用）
+let setReplayAudio = (audio) => {};
+
+export function setSetReplayAudio(fn) {
+    setReplayAudio = fn;
 }
 
 // 中斷回呼：當使用者手動停止播放時觸發（用於中斷練習）
