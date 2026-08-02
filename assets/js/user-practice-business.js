@@ -36,7 +36,15 @@ function midiPitchToFreq(pitch) {
 async function loadMIDI() {
     if (!currentSongId) return;
     try {
-        const res = await fetch(API_BASE + '/songs/' + currentSongId + '/midi', { credentials: 'same-origin' });
+        const headers = {};
+        const token = localStorage.getItem('token');
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        const res = await fetch(API_BASE + '/songs/' + currentSongId + '/midi', {
+            credentials: 'same-origin',
+            headers
+        });
         if (!res.ok) throw new Error('Failed to load MIDI');
         midiData = await res.arrayBuffer();
         parsedNotes = parseMIDINotes(midiData);
@@ -103,9 +111,14 @@ function stopPlayback() {
 }
 
 async function api(path, options = {}) {
+    const headers = { 'Content-Type': 'application/json', ...options.headers };
+    const token = localStorage.getItem('token');
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
     const res = await fetch(API_BASE + path, {
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         ...options,
     });
     if (!res.ok) {

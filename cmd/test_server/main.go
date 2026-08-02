@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"vocal-practice-app/internal/domain"
 	"vocal-practice-app/internal/handler"
@@ -29,6 +31,16 @@ func main() {
 	if jwtSecret == "" {
 		jwtSecret = "test-server-secret"
 	}
+
+	// HTTPS configuration via environment variables
+	tlsCert := os.Getenv("TEST_TLS_CERT")
+	tlsKey := os.Getenv("TEST_TLS_KEY")
+	httpsPort := os.Getenv("TEST_HTTPS_PORT")
+	if httpsPort == "" {
+		httpsPort = ":18443"
+	}
+	// If TLS is enabled, optionally redirect HTTP traffic to HTTPS
+	redirectHTTP := os.Getenv("TEST_REDIRECT_HTTP_TO_HTTPS") == "true"
 
 	absUploadDir, err := filepath.Abs(uploadDir)
 	if err != nil {
@@ -101,6 +113,8 @@ func main() {
 		r.Post("/songs/{song_id}/structures", adminStructuresHandler.BulkCreate)
 		r.Get("/songs/{song_id}/structures/export", adminStructuresHandler.ExportStructures)
 		r.Post("/songs/{song_id}/structures/import", adminStructuresHandler.ImportStructures)
+		r.Post("/songs/{song_id}/structures/copy-from/{source_song_id}", adminStructuresHandler.CopyStructuresFromSong)
+		r.Post("/songs/{song_id}/structures/{section_id}/copy-phrases", adminStructuresHandler.CopySectionPhrases)
 		r.Put("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Update)
 		r.Delete("/songs/{song_id}/structures/{structure_id}", adminStructuresHandler.Delete)
 
@@ -132,9 +146,29 @@ func main() {
 	filesDir := filepath.Join(workDir, ".")
 	r.Handle("/*", http.FileServer(http.Dir(filesDir)))
 
-	fmt.Printf("Test server starting on %s\n", port)
 	fmt.Printf("Upload directory: %s\n", absUploadDir)
-	log.Fatal(http.ListenAndServe(port, r))
+
+	// Start server with HTTPS if TLS cert/key are provided, otherwise HTTP
+	if tlsCert != "" && tlsKey != "" {
+		fmt.Printf("Test server starting on %s (HTTPS)\n", httpsPort)
+		if redirectHTTP {
+			// Start HTTP server that redirects to HTTPS
+			go func() {
+				redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					host := req.Host
+					// Replace the HTTP port with the HTTPS port
+					redirectURL := "https://" + host + req.URL.RequestURI()
+					http.Redirect(w, req, redirectURL, http.StatusMovedPermanently)
+				})
+				fmt.Printf("HTTP redirect server starting on %s -> %s\n", port, httpsPort)
+				log.Fatal(http.ListenAndServe(port, redirectHandler))
+			}()
+		}
+		log.Fatal(http.ListenAndServeTLS(httpsPort, tlsCert, tlsKey, r))
+	} else {
+		fmt.Printf("Test server starting on %s (HTTP)\n", port)
+		log.Fatal(http.ListenAndServe(port, r))
+	}
 }
 
 func seedTestData(store storage.Store, midiParser *service.MIDIParser, uploadDir string) {
@@ -171,109 +205,277 @@ func seedTestData(store storage.Store, midiParser *service.MIDIParser, uploadDir
 		log.Printf("[seed] user ready: webbchang@gmail.com / test1234")
 	}
 
-	// Load reference2.MID
-	midiCandidates := []string{
-		"test_data/reference2.MID",
-		"test_data/reference2.mid",
-	}
-
-	for _, midiPath := range midiCandidates {
-		data, err := os.ReadFile(midiPath)
-		if err != nil {
-			continue
-		}
-
-		song, err := midiParser.Parse(data, "song1", "artist1")
-		if err != nil {
-			log.Printf("[seed] reference2 parse failed: %v", err)
-			return
-		}
-
-		filename := song.ID.String() + ".mid"
-		filePath := filepath.Join(uploadDir, filename)
-		if err := os.WriteFile(filePath, data, 0644); err != nil {
-			log.Printf("[seed] write midi failed: %v", err)
-			return
-		}
-
-		song.MIDIFilePath = filePath
-		if err := store.CreateSong(song); err != nil {
-			log.Printf("[seed] create song failed: %v", err)
-			return
-		}
-
-		log.Printf("[seed] song ready: %s - %s (%s)", song.Title, song.Artist, midiPath)
-
-		// Print track names for debugging
-		var trackNames []string
-		for _, t := range song.Tracks {
-			trackNames = append(trackNames, t.Name)
-		}
-		trackNamesJSON, _ := json.Marshal(trackNames)
-		log.Printf("[seed] tracks: %s", string(trackNamesJSON))
-
-		// Find Tenor 2 track to bind structures to it
-		var tenor2TrackID *uuid.UUID
-		for i, t := range song.Tracks {
-			if t.Name == "Tenor 2" {
-				tenor2TrackID = &song.Tracks[i].ID
-				break
-			}
-		}
-		if tenor2TrackID == nil {
-			log.Printf("[seed] Tenor 2 track not found, structures will be global")
-		}
-
-		tempoEntries := make([]service.TempoEntry, len(song.TempoMap))
-		for i, te := range song.TempoMap {
-			tempoEntries[i] = service.TempoEntry{
-				Tick:        te.Tick,
-				TimeSec:     te.TimeSec,
-				TempoUSecQN: te.TempoUSecQN,
-			}
-		}
-
-		ppq := song.TicksPerQuarter
-		if ppq == 0 {
-			ppq = 480
-		}
-
-		startTick := service.SecToTick(15, tempoEntries, ppq)
-		a1EndTick := service.SecToTick(29, tempoEntries, ppq)
-		endTick := service.SecToTick(50.6, tempoEntries, ppq)
-
-		section := domain.NewSongStructure(
-			song.ID, tenor2TrackID, nil,
-			domain.StructureTypeSECTION, "Verse A",
-			15, 50.6, startTick, endTick, 1,
-		)
-
-		phrase1 := domain.NewSongStructure(
-			song.ID, tenor2TrackID, &section.ID,
-			domain.StructureTypePHRASE, "A1",
-			15, 29, startTick, a1EndTick, 1,
-		)
-
-		phrase2 := domain.NewSongStructure(
-			song.ID, tenor2TrackID, &section.ID,
-			domain.StructureTypePHRASE, "A2",
-			29, 50.6, a1EndTick, endTick, 2,
-		)
-
-		if err := store.CreateStructure([]*domain.SongStructure{section, phrase1, phrase2}); err != nil {
-			log.Printf("[seed] create structures failed: %v", err)
-		} else {
-			if tenor2TrackID != nil {
-				log.Printf("[seed] Tenor 2 structures ready: Verse A with A1, A2")
-			} else {
-				log.Printf("[seed] global structures ready: Verse A with A1, A2")
-			}
-		}
-
+	// Load 油桐花 (Josu Elberdin)
+	midiPath := "test_data/all_油桐花_hidden (2).mid"
+	data, err := os.ReadFile(midiPath)
+	if err != nil {
+		log.Printf("[seed] 油桐花 MIDI not found: %v, you can upload later via POST /api/v1/admin/songs", err)
 		return
 	}
 
-	log.Printf("[seed] reference2.MID not found, you can upload later via POST /api/v1/admin/songs")
+	song, err := midiParser.Parse(data, "油桐花", "Josu Elberdin")
+	if err != nil {
+		log.Printf("[seed] 油桐花 parse failed: %v", err)
+		return
+	}
+
+	filename := song.ID.String() + ".mid"
+	filePath := filepath.Join(uploadDir, filename)
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		log.Printf("[seed] write midi failed: %v", err)
+		return
+	}
+
+	song.MIDIFilePath = filePath
+	if err := store.CreateSong(song); err != nil {
+		log.Printf("[seed] create song failed: %v", err)
+		return
+	}
+
+	log.Printf("[seed] song ready: %s - %s (%s)", song.Title, song.Artist, midiPath)
+
+	// Print track names for debugging
+	var trackNames []string
+	for _, t := range song.Tracks {
+		trackNames = append(trackNames, t.Name)
+	}
+	trackNamesJSON, _ := json.Marshal(trackNames)
+	log.Printf("[seed] tracks: %s", string(trackNamesJSON))
+
+	// Load structures from CSV
+	csvPath := "test_data/油桐花-structures.csv"
+	csvData, err := os.ReadFile(csvPath)
+	if err != nil {
+		log.Printf("[seed] 油桐花 structures CSV not found: %v", err)
+		return
+	}
+
+	entries, err := parseSeedStructureCSV(string(csvData))
+	if err != nil {
+		log.Printf("[seed] parse structures CSV failed: %v", err)
+		return
+	}
+
+	// Resolve track names to track IDs
+	trackByName := make(map[string]uuid.UUID)
+	for _, t := range song.Tracks {
+		trackByName[t.Name] = t.ID
+	}
+
+	// Build tempo map for tick calculation
+	tempoEntries := make([]service.TempoEntry, len(song.TempoMap))
+	for i, te := range song.TempoMap {
+		tempoEntries[i] = service.TempoEntry{
+			Tick:        te.Tick,
+			TimeSec:     te.TimeSec,
+			TempoUSecQN: te.TempoUSecQN,
+		}
+	}
+
+	ppq := song.TicksPerQuarter
+	if ppq == 0 {
+		ppq = 480
+	}
+
+	// Build structures grouped by track
+	var allStructs []*domain.SongStructure
+	var lyricsBatch []struct {
+		trackID     uuid.UUID
+		structureID uuid.UUID
+		lyrics      string
+	}
+
+	// Group entries by track name, preserving CSV order
+	type trackGroup struct {
+		trackName string
+		entries   []seedCSVEntry
+	}
+	var groups []trackGroup
+	groupIndex := make(map[string]int)
+	for _, e := range entries {
+		idx, ok := groupIndex[e.TrackName]
+		if !ok {
+			idx = len(groups)
+			groupIndex[e.TrackName] = idx
+			groups = append(groups, trackGroup{trackName: e.TrackName})
+		}
+		groups[idx].entries = append(groups[idx].entries, e)
+	}
+
+	for _, g := range groups {
+		var trackID *uuid.UUID
+		if g.trackName != "" {
+			if tid, ok := trackByName[g.trackName]; ok {
+				trackID = &tid
+			} else {
+				log.Printf("[seed] track '%s' not found in song, skipping its structures", g.trackName)
+				continue
+			}
+		}
+
+		// Build sections first, then phrases
+		var sections []seedCSVEntry
+		var phrases []seedCSVEntry
+		for _, e := range g.entries {
+			if e.Type == "S" {
+				sections = append(sections, e)
+			} else {
+				phrases = append(phrases, e)
+			}
+		}
+
+		// Create sections
+		for _, e := range sections {
+			st := domain.NewSongStructure(
+				song.ID, trackID, nil,
+				domain.StructureTypeSECTION, e.Title,
+				e.Start, e.End,
+				service.SecToTick(e.Start, tempoEntries, ppq),
+				service.SecToTick(e.End, tempoEntries, ppq),
+				e.Order,
+			)
+			allStructs = append(allStructs, st)
+		}
+
+		// Create phrases, linking to containing section
+		for _, e := range phrases {
+			var parent *domain.SongStructure
+			for _, st := range allStructs {
+				if st.Type == domain.StructureTypeSECTION && st.StartTime <= e.Start && st.EndTime >= e.End {
+					parent = st
+				}
+			}
+			if parent == nil {
+				log.Printf("[seed] phrase '%s' has no containing section, skipping", e.Title)
+				continue
+			}
+			ph := domain.NewSongStructure(
+				song.ID, trackID, &parent.ID,
+				domain.StructureTypePHRASE, e.Title,
+				e.Start, e.End,
+				service.SecToTick(e.Start, tempoEntries, ppq),
+				service.SecToTick(e.End, tempoEntries, ppq),
+				e.Order,
+			)
+			allStructs = append(allStructs, ph)
+			if e.Lyrics != "" && trackID != nil {
+				lyricsBatch = append(lyricsBatch, struct {
+					trackID     uuid.UUID
+					structureID uuid.UUID
+					lyrics      string
+				}{trackID: *trackID, structureID: ph.ID, lyrics: e.Lyrics})
+			}
+		}
+	}
+
+	if len(allStructs) > 0 {
+		if err := store.CreateStructure(allStructs); err != nil {
+			log.Printf("[seed] create structures failed: %v", err)
+		} else {
+			log.Printf("[seed] structures ready: %d structures imported from %s", len(allStructs), csvPath)
+		}
+	}
+
+	// Save lyrics
+	for _, lb := range lyricsBatch {
+		if err := store.UpsertTrackLyrics(lb.trackID, lb.structureID, lb.lyrics); err != nil {
+			log.Printf("[seed] upsert lyrics failed: %v", err)
+		}
+	}
+	if len(lyricsBatch) > 0 {
+		log.Printf("[seed] lyrics ready: %d lyrics entries", len(lyricsBatch))
+	}
+}
+
+type seedCSVEntry struct {
+	Type      string
+	Title     string
+	Start     float64
+	End       float64
+	Order     int
+	TrackName string
+	Lyrics    string
+}
+
+func parseSeedStructureCSV(csvStr string) ([]seedCSVEntry, error) {
+	lines := strings.Split(csvStr, "\n")
+	if len(lines) < 2 {
+		return nil, fmt.Errorf("csv must have header + at least 1 row")
+	}
+	header := strings.TrimSpace(lines[0])
+	expectedHeader := "type,title,start,end,order,track_name,lyrics"
+	if strings.TrimSpace(header) != expectedHeader {
+		return nil, fmt.Errorf("expected header: %s", expectedHeader)
+	}
+
+	var entries []seedCSVEntry
+	for i := 1; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		if line == "" {
+			continue
+		}
+		// Skip comment lines (e.g. "# Track: Vocal")
+		if line[0] == '#' {
+			continue
+		}
+		// Simple CSV parser (handles quoted fields)
+		fields := parseSeedCSVLine(line)
+		if len(fields) < 6 {
+			return nil, fmt.Errorf("line %d: expected at least 6 fields, got %d", i+1, len(fields))
+		}
+		t := strings.TrimSpace(fields[0])
+		if t != "S" && t != "P" {
+			return nil, fmt.Errorf("line %d: type must be S or P, got %s", i+1, t)
+		}
+		title := strings.TrimSpace(fields[1])
+		start, err := strconv.ParseFloat(strings.TrimSpace(fields[2]), 64)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: invalid start: %s", i+1, fields[2])
+		}
+		end, err := strconv.ParseFloat(strings.TrimSpace(fields[3]), 64)
+		if err != nil {
+			return nil, fmt.Errorf("line %d: invalid end: %s", i+1, fields[3])
+		}
+		order, err := strconv.Atoi(strings.TrimSpace(fields[4]))
+		if err != nil {
+			order = 0
+		}
+		trackName := strings.TrimSpace(fields[5])
+		lyrics := ""
+		if len(fields) >= 7 {
+			lyrics = strings.TrimSpace(fields[6])
+		}
+		entries = append(entries, seedCSVEntry{
+			Type: t, Title: title, Start: start, End: end,
+			Order: order, TrackName: trackName, Lyrics: lyrics,
+		})
+	}
+	return entries, nil
+}
+
+// parseSeedCSVLine handles simple CSV with quoted fields
+func parseSeedCSVLine(line string) []string {
+	var fields []string
+	var cur strings.Builder
+	inQuote := false
+	for i := 0; i < len(line); i++ {
+		ch := line[i]
+		if ch == '"' {
+			if inQuote && i+1 < len(line) && line[i+1] == '"' {
+				cur.WriteByte('"')
+				i++
+			} else {
+				inQuote = !inQuote
+			}
+		} else if ch == ',' && !inQuote {
+			fields = append(fields, cur.String())
+			cur.Reset()
+		} else {
+			cur.WriteByte(ch)
+		}
+	}
+	fields = append(fields, cur.String())
+	return fields
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

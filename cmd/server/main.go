@@ -154,21 +154,20 @@ func main() {
 
 	// === User API ===
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(authHandler.Middleware)
+
 		r.Get("/songs", userSongsHandler.ListSongs)
 		r.Get("/songs/{song_id}", userSongsHandler.GetSong)
 		r.Get("/songs/{song_id}/midi", userSongsHandler.DownloadMIDI)
 		r.Get("/songs/{song_id}/structures", userSongsHandler.GetStructures)
 		r.Get("/songs/{song_id}/tracks/{track_id}/audio", trackAudioHandler.ServeTrackAudio)
 
-		r.Group(func(r chi.Router) {
-			r.Use(authHandler.Middleware)
-			r.Post("/assessments/submit", userAssessmentsHandler.Submit)
-			r.Get("/assessments", userAssessmentsHandler.ListMyAssessments)
-			r.Get("/assessments/stats", userAssessmentsHandler.GetStats)
-			r.Get("/assessments/{assessment_id}", userAssessmentsHandler.GetAssessment)
-			r.Get("/assessments/{assessment_id}/download", userAssessmentsHandler.Download)
-			r.Delete("/assessments/{assessment_id}", userAssessmentsHandler.Delete)
-		})
+		r.Post("/assessments/submit", userAssessmentsHandler.Submit)
+		r.Get("/assessments", userAssessmentsHandler.ListMyAssessments)
+		r.Get("/assessments/stats", userAssessmentsHandler.GetStats)
+		r.Get("/assessments/{assessment_id}", userAssessmentsHandler.GetAssessment)
+		r.Get("/assessments/{assessment_id}/download", userAssessmentsHandler.Download)
+		r.Delete("/assessments/{assessment_id}", userAssessmentsHandler.Delete)
 	})
 
 	// Static file server for frontend

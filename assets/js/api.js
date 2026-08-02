@@ -49,7 +49,13 @@ export async function loadSongs() {
 export async function loadMIDI(currentSongId) {
     if (!currentSongId) return null;
     try {
-        const res = await fetch(API_BASE + '/songs/' + currentSongId + '/midi', { credentials: 'same-origin' });
+        const token = localStorage.getItem('token');
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const res = await fetch(API_BASE + '/songs/' + currentSongId + '/midi', {
+            credentials: 'same-origin',
+            headers,
+        });
         if (!res.ok) throw new Error('Failed to load MIDI');
         return await res.arrayBuffer();
     } catch (err) {
