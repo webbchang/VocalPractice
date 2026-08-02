@@ -223,13 +223,6 @@ export function setUpdatePlayBtn(fn) {
     updatePlayBtn = fn;
 }
 
-// setReplayAudio 用於設置當前回放的音頻對象（從外部調用）
-let setReplayAudio = (audio) => {};
-
-export function setSetReplayAudio(fn) {
-    setReplayAudio = fn;
-}
-
 // 中斷回呼：當使用者手動停止播放時觸發（用於中斷練習）
 let onInterruptCallback = null;
 

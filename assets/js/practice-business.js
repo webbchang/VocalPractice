@@ -4,7 +4,7 @@
 
 import state from './state.js';
 import { api, loadMIDI, loadStructures } from './api.js';
-import { getAudioCtx, playRange, playRangeDelayed, stopPlayback, stopReplay, getIsReplaying, setSetReplayAudio, scheduleBeats, AudioProcess, stopAudioProcess } from './audio.js';
+import { getAudioCtx, playRange, playRangeDelayed, stopPlayback, stopReplay, getIsReplaying, setReplayAudio, scheduleBeats, AudioProcess, stopAudioProcess } from './audio.js';
 
 function determineParsedTrackIndex() {
     const { currentSongFull, selectedTrackId } = state;
@@ -476,22 +476,51 @@ let isPracticeActive = false;
 function startMediaRecorder() {
     if (mediaRecorder && mediaRecorder.state === 'recording') return;
     recordedChunks = [];
+    
+    // 檢查瀏覽器支援
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        console.warn('getUserMedia is not supported in this environment');
+        return;
+    }
+    
     if (!window.isSecureContext) {
         console.warn('Not a secure context — getUserMedia may be blocked. Use localhost or HTTPS.');
     }
-    navigator.mediaDevices.getUserMedia({ audio: true })
+    
+    // 設定高品質錄音參數：96kHz 採樣率，單聲道
+    const constraints = {
+        audio: {
+            sampleRate: 96000,
+            channelCount: 1,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+        }
+    };
+    
+    navigator.mediaDevices.getUserMedia(constraints)
         .then(stream => {
-            mediaRecorder = new MediaRecorder(stream);
+            // 優先使用高品質的 MIME 類型
+            let mimeType = 'audio/webm;codecs=opus';
+            if (!MediaRecorder.isTypeSupported(mimeType)) {
+                mimeType = 'audio/webm';
+            }
+            
+            const options = mimeType ? { mimeType } : {};
+            mediaRecorder = new MediaRecorder(stream, options);
+            
             mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) {
                     recordedChunks.push(e.data);
                 }
             };
-            mediaRecorder.start();
+            
+            // 使用較小的 timeslice 以確保資料更穩定
+            mediaRecorder.start(100);
         })
         .catch(err => {
             console.error('Failed to start recording:', err);
-            alert('無法存取麥克風。請確認已允許麥克風權限，並使用 localhost 或 HTTPS 連線。');
+            alert('無法存取麥克風。請確認已允許麥克風權限，並使用 localhost 或 HTTPS 連線。\n錯誤：' + err.message);
         });
 }
 
@@ -569,7 +598,7 @@ function showReplayButton() {
         const audio = new Audio(url);
         
         // 設置回放音頻引用
-        setSetReplayAudio(audio);
+        setReplayAudio(audio);
         
         audio.onloadedmetadata = () => {
             // 從錄音截除點之後開始播放，截掉所有提示音（Beat 1, 2, 3）
@@ -580,7 +609,7 @@ function showReplayButton() {
         
         audio.onended = () => {
             URL.revokeObjectURL(url);
-            setSetReplayAudio(null);
+            setReplayAudio(null);
             replayBtn.textContent = '🔁 再次回放';
             replayBtn.disabled = false;
             stopReplayBtn.style.display = 'none';
@@ -596,7 +625,7 @@ function showReplayButton() {
 
     stopReplayBtn.onclick = () => {
         stopAudioProcess(AudioProcess.RECORDING_REPLAY);
-        setSetReplayAudio(null);
+        setReplayAudio(null);
         replayBtn.textContent = '🔁 再次回放';
         replayBtn.disabled = false;
         stopReplayBtn.style.display = 'none';

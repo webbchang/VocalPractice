@@ -185,6 +185,20 @@
         window.__selectTrack = selectTrack;
         window.__selectStructure = selectStructure;
         window.__toggleAccompanimentTrack = toggleAccompanimentTrack;
+        
+        // 提前中止播放功能
+        window.__stopPlayback = function() {
+            const wasPlaying = getIsPlaying();
+            if (wasPlaying) {
+                stopPlayback();
+                // 如果正在練習模式，觸發中斷
+                if (state.practicePhase === 'recording' || state.practicePhase === 'playing_beats') {
+                    interruptPractice();
+                }
+            }
+            // 同時停止錄音回放
+            stopReplayPlayback();
+        };
 
         // --- 初始化 ---
         loadSongs();

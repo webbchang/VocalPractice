@@ -4,7 +4,7 @@
 
 import state from './state.js';
 import { playRange, togglePlayback, getIsPlaying, stopPlayback, setUpdatePlayBtn } from './audio.js';
-import { playRangeWithBeats } from './practice-business.js';
+import { playRangeWithBeats, interruptPractice } from './practice-business.js';
 import { getLyricsForSelection } from './practice-business.js';
 
 function formatTime(sec) {
@@ -28,10 +28,26 @@ export function updatePlayBtn() {
             <polygon points="8,5 19,12 8,19" fill="white"/>
         </svg>`;
     }
+    
+    // 同時更新段落/句子按鈕的中止按鈕顯示狀態
+    updateStopButtonsVisibility();
+}
+
+// 更新所有段落/句子中止按鈕的顯示/隱藏
+export function updateStopButtonsVisibility() {
+    const stopButtons = document.querySelectorAll('.btn-stop');
+    const isPlaying = getIsPlaying();
+    
+    stopButtons.forEach(btn => {
+        btn.style.display = isPlaying ? 'inline-block' : 'none';
+    });
 }
 
 // Register updatePlayBtn with audio module
-setUpdatePlayBtn(updatePlayBtn);
+setUpdatePlayBtn(() => {
+    updatePlayBtn();
+    updateStopButtonsVisibility();
+});
 
 // --- 音軌渲染 ---
 export function renderVocalTracks(tracks) {
@@ -183,6 +199,7 @@ export function renderStructureList() {
                     <span class="structure-name">${item.data.title}</span>
                     <span class="structure-time">${formatTime(item.data.start_time)} - ${formatTime(item.data.end_time)}</span>
                     <button class="btn-play" onclick="event.stopPropagation();playRangeWithBeats(${item.data.start_time},${item.data.end_time},false)">▶️</button>
+                    <button class="btn-stop" onclick="event.stopPropagation();window.__stopPlayback()" style="display:none;margin-left:4px;">⏹️</button>
                 </div>
             `;
         } else if (item.type === 'phrase') {
@@ -192,6 +209,7 @@ export function renderStructureList() {
                     <span class="structure-name">${item.data.title} ${item.data.lyrics ? '🎤' : ''}</span>
                     <span class="structure-time">${formatTime(item.data.start_time)} - ${item.data.lyrics ? '' : formatTime(item.data.end_time)}</span>
                     <button class="btn-play" onclick="event.stopPropagation();playRangeWithBeats(${item.data.start_time},${item.data.end_time},false)">▶️</button>
+                    <button class="btn-stop" onclick="event.stopPropagation();window.__stopPlayback()" style="display:none;margin-left:4px;">⏹️</button>
                 </div>
             `;
         }

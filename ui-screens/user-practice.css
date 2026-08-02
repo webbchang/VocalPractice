@@ -118,6 +118,21 @@
             background: #16a085;
         }
 
+        .btn-stop {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 4px;
+        }
+
+        .btn-stop:hover {
+            background: #c0392b;
+        }
+
         .main-container {
             display: grid;
             grid-template-columns: 320px 1fr;
