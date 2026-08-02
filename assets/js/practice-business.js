@@ -4,7 +4,7 @@
 
 import state from './state.js';
 import { api, loadMIDI, loadStructures } from './api.js';
-import { getAudioCtx, playRange, playRangeDelayed, stopPlayback, stopReplay, getIsReplaying, setSetReplayAudio, scheduleBeats } from './audio.js';
+import { getAudioCtx, playRange, playRangeDelayed, stopPlayback, stopReplay, getIsReplaying, setSetReplayAudio, scheduleBeats, AudioProcess, stopAudioProcess } from './audio.js';
 
 function determineParsedTrackIndex() {
     const { currentSongFull, selectedTrackId } = state;
@@ -593,7 +593,7 @@ function showReplayButton() {
     };
 
     stopReplayBtn.onclick = () => {
-        stopReplay();
+        stopAudioProcess(AudioProcess.RECORDING_REPLAY);
         setSetReplayAudio(null);
         replayBtn.textContent = '🔁 再次回放';
         replayBtn.disabled = false;
@@ -703,8 +703,8 @@ export function startPractice() {
  */
 export function interruptPractice() {
     cleanupPractice(true); // 丟棄錄音
-    stopPlayback();
-    stopReplay(); // 也停止回放
+    stopAudioProcess(AudioProcess.PRACTICE_PLAYBACK);
+    stopAudioProcess(AudioProcess.RECORDING_REPLAY);
     document.getElementById('status-text').textContent = '準備就緒';
     document.getElementById('chart-area').innerHTML = `
         <div>

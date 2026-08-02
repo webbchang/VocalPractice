@@ -3,6 +3,13 @@
 
 import state from './state.js';
 
+// Audio Process 常量 - 用於識別不同的音訊行為
+export const AudioProcess = {
+  PRACTICE_PLAYBACK: 'practice_playback',      // 練習音檔播放（伴奏+節拍器）
+  ACCOMPANIMENT: 'accompaniment',               // 單獨播放伴奏
+  RECORDING_REPLAY: 'recording_replay'          // 使用者錄音回放
+};
+
 let audioCtx = null;
 let playbackNodes = [];
 let playbackTimer = null;
@@ -161,6 +168,28 @@ export function stopReplay() {
         replayAudio.pause();
         replayAudio.currentTime = 0;
         replayAudio = null;
+    }
+}
+
+/**
+ * 統一停止音訊 process
+ * @param {string} processId - AudioProcess 常量
+ */
+export function stopAudioProcess(processId) {
+    switch(processId) {
+        case AudioProcess.PRACTICE_PLAYBACK:
+            stopPlayback();
+            break;
+        case AudioProcess.RECORDING_REPLAY:
+            stopReplay();
+            break;
+        case AudioProcess.ACCOMPANIMENT:
+            stopPlayback();
+            break;
+        default:
+            // 如果沒有匹配的 process，停止所有音訊
+            stopPlayback();
+            stopReplay();
     }
 }
 
