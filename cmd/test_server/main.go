@@ -135,6 +135,7 @@ func main() {
 		r.Get("/songs/{song_id}/tracks/{track_id}/audio", trackAudioHandler.ServeTrackAudio)
 
 		r.Post("/assessments/submit", userAssessmentsHandler.Submit)
+		r.Post("/assessments/analyze", userAssessmentsHandler.AnalyzeRecording)
 		r.Get("/assessments", userAssessmentsHandler.ListMyAssessments)
 		r.Get("/assessments/stats", userAssessmentsHandler.GetStats)
 		r.Get("/assessments/{assessment_id}", userAssessmentsHandler.GetAssessment)

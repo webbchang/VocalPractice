@@ -453,16 +453,127 @@
             }
         }
 
-        /* 歌詞面板 */
-        .lyrics-panel {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 20px;
-            min-height: 120px;
-            max-height: 360px;
-            display: flex;
-            flex-direction: column;
-        }
+/* 歌詞面板 */
+.lyrics-panel {
+    background: #16213e;
+    border-radius: 12px;
+    padding: 20px;
+    min-height: 120px;
+    max-height: 360px;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 視覺化容器 */
+.viz-container {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.viz-score, .viz-pitch {
+    flex: 1;
+    background: #16213e;
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.viz-title {
+    font-size: 14px;
+    color: #888;
+    text-align: center;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* 詳細結果面板 */
+.detailed-results {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid #333;
+}
+
+.detailed-results h3 {
+    font-size: 16px;
+    color: #fff;
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.detailed-results h3::before {
+    content: "📋";
+    font-size: 18px;
+}
+
+/* 音符比對表格 */
+.note-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin-top: 8px;
+    background: #1a1a2e;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.note-table th {
+    background: #16213e;
+    color: #888;
+    font-size: 12px;
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid #333;
+}
+
+.note-table td {
+    color: #ddd;
+    font-size: 13px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #333;
+}
+
+.note-table tr:last-child td {
+    border-bottom: none;
+}
+
+.note-table tr:nth-child(even) {
+    background: #1a1a2e;
+}
+
+.note-table tr:hover {
+    background: #1e2a4a;
+}
+
+/* 音符狀態指示器 */
+.note-status {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 6px;
+}
+
+.note-status.matched {
+    background: #4CAF50;
+}
+
+.note-status.missed {
+    background: #F44336;
+}
+
+/* 響應式調整 */
+@media (max-width: 768px) {
+    .viz-container {
+        flex-direction: column;
+    }
+    
+    .main-container {
+        grid-template-columns: 1fr;
+    }
+}
 
         .lyrics-header {
             display: flex;

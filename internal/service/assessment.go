@@ -24,14 +24,14 @@ type MergedNoteForAssessment struct {
 
 // AssessmentResultForAssessment is the result of pitch assessment
 type AssessmentResultForAssessment struct {
-	Score                    int
-	TotalNotes               int
-	MatchedNotes             int
-	AveragePitchDeviation    float64
-	AverageDurationDeviation float64
-	PitchDeviation           []float64
-	DurationDeviation        []float64
-	NoteComparison           []domain.NoteComparison
+	Score                    int                  `json:"score"`
+	TotalNotes               int                  `json:"total_notes"`
+	MatchedNotes             int                  `json:"matched_notes"`
+	AveragePitchDeviation    float64              `json:"average_pitch_deviation"`
+	AverageDurationDeviation float64              `json:"average_duration_deviation"`
+	PitchDeviation           []float64            `json:"pitch_deviation"`
+	DurationDeviation        []float64            `json:"duration_deviation"`
+	NoteComparison           []domain.NoteComparison `json:"note_comparison"`
 }
 
 // AssessRecordingWithVowelFiltering performs pitch assessment on user's recording
