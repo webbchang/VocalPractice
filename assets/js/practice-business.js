@@ -283,6 +283,11 @@ export function clearSelection() {
     document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
     document.getElementById('range-actions').style.display = 'none';
     document.getElementById('current-range-label').textContent = '未選擇';
+    // 隱藏結果面板
+    const resultsPanel = document.getElementById('results-panel');
+    if (resultsPanel) {
+        resultsPanel.classList.remove('visible');
+    }
     import('./practice-ui.js').then(m => {
         m.renderStructureList();
         m.renderLyricsPanel();
@@ -305,6 +310,11 @@ export async function onSongChange() {
         document.getElementById('song-artist').textContent = '';
         document.getElementById('vocal-tracks').innerHTML = '<div class="no-structures">請先選擇歌曲</div>';
         document.getElementById('structure-list').innerHTML = '<div class="no-structures">請先選擇歌曲</div>';
+        // 隱藏結果面板
+        const resultsPanel = document.getElementById('results-panel');
+        if (resultsPanel) {
+            resultsPanel.classList.remove('visible');
+        }
         return;
     }
 
@@ -464,30 +474,73 @@ export function playRangeWithBeats(sectionStart, sectionEnd, withRecording = fal
 }
 
 /**
- * Start MediaRecorder for recording user's voice.
- * Tracks are stored for later upload/analysis.
+ * Start recording user's voice using Web Audio API.
+ * Audio is captured as 16-bit PCM WAV.
  */
-let mediaRecorder = null;
-let recordedChunks = [];
+let audioContext = null;
+let audioInput = null;
+let scriptProcessorNode = null;
+let audioBuffer = []; // Float32Array samples
+let recordedWavBlob = null; // Encoded WAV blob
 let practiceTimerInterval = null;
 let practiceEndTimer = null;
 let isPracticeActive = false;
 
+function encodeWAV(samples, sampleRate) {
+    // Convert Float32Array to 16-bit PCM
+    const buffer = new ArrayBuffer(44 + samples.length * 2); // WAV header + PCM data
+    const view = new DataView(buffer);
+
+    // RIFF header
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + samples.length * 2, true); // ChunkSize
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true); // Subchunk1Size (PCM)
+    view.setUint16(20, 1, true); // AudioFormat (PCM)
+    view.setUint16(22, 1, true); // NumChannels (mono)
+    view.setUint32(24, sampleRate, true); // SampleRate
+    view.setUint32(28, sampleRate * 2, true); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
+    view.setUint16(32, 2, true); // BlockAlign (NumChannels * BitsPerSample/8)
+    view.setUint16(34, 16, true); // BitsPerSample
+    writeString(view, 36, 'data');
+    view.setUint32(40, samples.length * 2, true); // Subchunk2Size
+
+    // Write PCM data
+    let offset = 44;
+    for (let i = 0; i < samples.length; i++) {
+        let s = Math.max(-1, Math.min(1, samples[i])); // Clamp to [-1, 1]
+        let val = s < 0 ? s * 0x8000 : s * 0x7FFF; // Convert to 16-bit signed integer
+        view.setInt16(offset, val, true); // Little endian
+        offset += 2;
+    }
+
+    return new Blob([buffer], { type: 'audio/wav' });
+}
+
+function writeString(view, offset, string) {
+    for (let i = 0; i < string.length; i++) {
+        view.setUint8(offset + i, string.charCodeAt(i));
+    }
+}
+
 function startMediaRecorder() {
-    if (mediaRecorder && mediaRecorder.state === 'recording') return;
-    recordedChunks = [];
-    
-    // 檢查瀏覽器支援
+    // Clean up any previous recording
+    stopMediaRecorder();
+
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         console.warn('getUserMedia is not supported in this environment');
         return;
     }
-    
+
     if (!window.isSecureContext) {
         console.warn('Not a secure context — getUserMedia may be blocked. Use localhost or HTTPS.');
     }
-    
-    // 設定高品質錄音參數：96kHz 採樣率，單聲道
+
+    // Reset recording state
+    audioBuffer = [];
+    recordedWavBlob = null;
+
     const constraints = {
         audio: {
             sampleRate: 96000,
@@ -497,26 +550,34 @@ function startMediaRecorder() {
             autoGainControl: false
         }
     };
-    
+
     navigator.mediaDevices.getUserMedia(constraints)
         .then(stream => {
-            // 優先使用高品質的 MIME 類型
-            let mimeType = 'audio/webm;codecs=opus';
-            if (!MediaRecorder.isTypeSupported(mimeType)) {
-                mimeType = 'audio/webm';
-            }
+            // Use the shared AudioContext from audio.js
+            audioContext = getAudioCtx();
             
-            const options = mimeType ? { mimeType } : {};
-            mediaRecorder = new MediaRecorder(stream, options);
+            // Create media stream source
+            audioInput = audioContext.createMediaStreamSource(stream);
             
-            mediaRecorder.ondataavailable = (e) => {
-                if (e.data.size > 0) {
-                    recordedChunks.push(e.data);
+            const bufferSize = 4096;
+            scriptProcessorNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+            
+            // Process audio data
+            scriptProcessorNode.onaudioprocess = function(e) {
+                if (!isPracticeActive) return; // Stop processing if not actively recording
+                
+                const input = e.inputBuffer.getChannelData(0); // Mono - use channel 0
+                // Copy samples to our buffer
+                for (let i = 0; i < input.length; i++) {
+                    audioBuffer.push(input[i]);
                 }
             };
             
-            // 使用較小的 timeslice 以確保資料更穩定
-            mediaRecorder.start(100);
+            // Connect the audio graph
+            audioInput.connect(scriptProcessorNode);
+            scriptProcessorNode.connect(audioContext.destination);
+            
+            // Start processing (implicitly starts when connected)
         })
         .catch(err => {
             console.error('Failed to start recording:', err);
@@ -526,21 +587,30 @@ function startMediaRecorder() {
 
 export function stopMediaRecorder() {
     return new Promise((resolve) => {
-        if (mediaRecorder && mediaRecorder.state === 'recording') {
-            mediaRecorder.onstop = () => {
-                try {
-                    mediaRecorder.stream.getTracks().forEach(t => t.stop());
-                } catch (e) {
-                    // stream may already be stopped
-                }
-                mediaRecorder = null;
-                resolve();
-            };
-            mediaRecorder.stop();
-        } else {
-            mediaRecorder = null;
-            resolve();
+        // Disconnect and clean up audio nodes
+        if (scriptProcessorNode) {
+            scriptProcessorNode.onaudioprocess = null;
+            scriptProcessorNode.disconnect();
+            scriptProcessorNode = null;
         }
+        if (audioInput) {
+            audioInput.disconnect();
+            audioInput = null;
+        }
+        // Note: We don't close audioContext as it's shared and used for playback
+        
+        // Stop any media stream tracks (cleanup)
+        // Note: The MediaStreamTracks are stopped when we disconnect the audioInput
+        
+        // Encode WAV blob if we have audio data
+        if (audioBuffer.length > 0) {
+            // Use AudioContext sample rate if available, otherwise default to 44100
+            const sampleRate = audioContext ? audioContext.sampleRate : 44100;
+            recordedWavBlob = encodeWAV(new Float32Array(audioBuffer), sampleRate);
+            audioBuffer = []; // Clear buffer after encoding
+        }
+        
+        resolve();
     });
 }
 
@@ -562,7 +632,7 @@ function cleanupPractice(discardRecording = false) {
     isPracticeActive = false;
     const stopPromise = stopMediaRecorder();
     if (discardRecording) {
-        recordedChunks = [];
+        recordedWavBlob = null;
     }
     // Timer 歸零
     const timerEl = document.getElementById('timer');
@@ -573,13 +643,21 @@ function cleanupPractice(discardRecording = false) {
 /**
  * 顯示回放錄音按鈕（練習結束後）
  */
-function showReplayButton() {
+export function showReplayButton() {
     const chartArea = document.getElementById('chart-area');
     if (!chartArea) return;
-    if (recordedChunks.length === 0) return;
+
+    // 移除已存在的回放按鈕容器（避免重複顯示）
+    const existingContainer = document.getElementById('replay-btn-container');
+    if (existingContainer) {
+        existingContainer.remove();
+    }
+
+    if (!recordedWavBlob) return;
 
     // 創建按鈕容器
     const btnContainer = document.createElement('div');
+    btnContainer.id = 'replay-btn-container';
     btnContainer.style.cssText = 'margin-top:16px;display:flex;gap:8px;align-items:center;';
 
     const replayBtn = document.createElement('button');
@@ -593,8 +671,7 @@ function showReplayButton() {
     stopReplayBtn.textContent = '⏹ 中斷回放';
 
     replayBtn.onclick = () => {
-        const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-        const url = URL.createObjectURL(blob);
+        const url = URL.createObjectURL(recordedWavBlob);
         const audio = new Audio(url);
         
         // 設置回放音頻引用
@@ -641,6 +718,49 @@ function showReplayButton() {
  */
 export function stopReplayPlayback() {
     stopReplay();
+    // 移除回放按鈕容器
+    const existingContainer = document.getElementById('replay-btn-container');
+    if (existingContainer) {
+        existingContainer.remove();
+    }
+}
+
+/**
+ * 錄製的音訊 Blob (WAV 格式) 取得器
+ * @returns {Blob|null} 錄製的音訊 Blob，如果沒有錄製則返回 null
+ */
+export function getRecordedAudioBlob() {
+    return recordedWavBlob || null;
+}
+
+/**
+ * 取得當前是否處於練習活動狀態
+ * @returns {boolean}
+ */
+export function isPracticeActivityActive() {
+    return isPracticeActive;
+}
+
+/**
+ * 取得錄製的音訊作為 Base64 編碼字串
+ * @returns {Promise<string|null>} Base64 編碼的音訊資料，如果沒有錄製則返回 null
+ */
+export function getRecordedAudioBase64() {
+    return new Promise((resolve, reject) => {
+        if (!recordedWavBlob) {
+            resolve(null);
+            return;
+        }
+        
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            // Remove the data:audio/wav;base64, prefix if present
+            const base64String = reader.result.split(',')[1] || '';
+            resolve(base64String);
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(recordedWavBlob);
+    });
 }
 
 /**
@@ -682,6 +802,11 @@ export function startPractice() {
 
     // 清除之前的練習狀態
     cleanupPractice(true);
+    // 隱藏之前的結果面板
+    const resultsPanel = document.getElementById('results-panel');
+    if (resultsPanel) {
+        resultsPanel.classList.remove('visible');
+    }
 
     // 計算練習時間參數（與 playRangeWithBeats 一致）
     const duration = selectedStructure.end - selectedStructure.start;
@@ -714,13 +839,24 @@ export function startPractice() {
     isPracticeActive = true;
     practiceEndTimer = setTimeout(() => {
         cleanupPractice(false).then(() => { // 保留錄音，等待 MediaRecorder onstop 完成
-            // 顯示回放按鈕
-            showReplayButton();
-            document.getElementById('status-text').textContent = '練習完成';
-            // 顯示覆蓋提示訊息
-            if (window.updateWarningVisibility) {
-                window.updateWarningVisibility();
-            }
+            // 分析並提交錄音
+            analyzeAndSubmitRecording().then(result => {
+                // 分析完成後顯示回放按鈕
+                showReplayButton();
+                document.getElementById('status-text').textContent = '分析完成';
+                // 顯示覆蓋提示訊息
+                if (window.updateWarningVisibility) {
+                    window.updateWarningVisibility();
+                }
+            }).catch(error => {
+                // 分析失敗時仍顯示回放按鈕並顯示錯誤
+                showReplayButton();
+                document.getElementById('status-text').textContent = '分析失敗: ' + error.message;
+                // 顯示覆蓋提示訊息
+                if (window.updateWarningVisibility) {
+                    window.updateWarningVisibility();
+                }
+            });
         });
     }, practiceTotalMs);
 
@@ -735,6 +871,11 @@ export function interruptPractice() {
     cleanupPractice(true); // 丟棄錄音
     stopAudioProcess(AudioProcess.PRACTICE_PLAYBACK);
     stopAudioProcess(AudioProcess.RECORDING_REPLAY);
+    // 隱藏結果面板
+    const resultsPanel = document.getElementById('results-panel');
+    if (resultsPanel) {
+        resultsPanel.classList.remove('visible');
+    }
     document.getElementById('status-text').textContent = '準備就緒';
     document.getElementById('chart-area').innerHTML = `
         <div>
@@ -745,5 +886,171 @@ export function interruptPractice() {
     // 更新提示訊息可見性
     if (window.updateWarningVisibility) {
         window.updateWarningVisibility();
+    }
+}
+
+/**
+ * 分析並提交錄音
+ * 錄製結束後自動呼叫此函數進行音訊分析和結果提交
+ */
+export async function analyzeAndSubmitRecording() {
+    try {
+        // 更新狀態
+        document.getElementById('status-text').textContent = '正在分析錄音...';
+        
+        // 取得錄製的音訊 (Base64 編碼的 WAV)
+        const audioBase64 = await getRecordedAudioBase64();
+        if (!audioBase64) {
+            throw new Error('無法取得錄音資料');
+        }
+        
+        // 取得參考音符
+        const referenceNotes = state.referenceNotes || [];
+        if (!referenceNotes || referenceNotes.length === 0) {
+            throw new Error('無可用的參考音符進行分析');
+        }
+        
+        // 取得音訊樣本率 (從 AudioContext 取得)
+        const audioContext = getAudioCtx();
+        const sampleRate = audioContext ? audioContext.sampleRate : 44100;
+        
+// 呼叫分析 API
+        const analysisResult = await api('/assessments/analyze', {
+            method: 'POST',
+            body: JSON.stringify({
+                audio_data: audioBase64,
+                audio_format: 'wav',
+                reference_notes: referenceNotes
+            })
+        });
+        
+        // 更新分析結果 UI
+        updateAnalysisResultsUI(analysisResult);
+        
+        // 可選：自動提交評估結果到歷史記錄
+        // 註解掉此部分如果只想顯示分析而不儲存
+        /*
+        await api('/assessments/submit', {
+            method: 'POST',
+            body: JSON.stringify({
+                song_id: state.currentSongId,
+                structure_id: state.selectedStructure?.id || null,
+                track_id: state.selectedTrackId,
+                score: analysisResult.Score,
+                total_notes: analysisResult.TotalNotes,
+                matched_notes: analysisResult.MatchedNotes,
+                average_pitch_deviation: result.AveragePitchDeviation,
+                average_duration_deviation: result.AverageDurationDeviation,
+                pitch_deviation: result.PitchDeviation,
+                duration_deviation: result.DurationDeviation,
+                note_comparison: result.NoteComparison
+            })
+        });
+        */
+        
+        // 更新狀態
+        document.getElementById('status-text').textContent = '分析完成';
+        
+        return analysisResult;
+    } catch (error) {
+        console.error('分析錄音時發生錯誤:', error);
+        document.getElementById('status-text').textContent = '分析失敗: ' + error.message;
+        
+        // 簡單的重試邏輯（最多重試 2 次）
+        if (window.analysisRetryCount === undefined) {
+            window.analysisRetryCount = 0;
+        }
+        
+        if (window.analysisRetryCount < 2) {
+            window.analysisRetryCount++;
+            document.getElementById('status-text').textContent = `分析失敗，正在重試... (${window.analysisRetryCount}/2)`;
+            // 短暫延遲後重試
+            return new Promise(resolve => {
+                setTimeout(() => {
+                    resolve(analyzeAndSubmitRecording());
+                }, 1000);
+            });
+        } else {
+            // 重試次數用完，重置計數器
+            window.analysisRetryCount = 0;
+            throw error;
+        }
+    }
+}
+
+/**
+ * 更新分析結果到 UI
+ * @param {Object} result - 分析結果物件
+ */
+function updateAnalysisResultsUI(result) {
+    // 更新結果面板
+    document.getElementById('result-matched').textContent = `${result.MatchedNotes}/${result.TotalNotes}`;
+    document.getElementById('result-pitch').textContent = result.AveragePitchDeviation?.toFixed(1) || '0';
+    document.getElementById('result-duration').textContent = result.AverageDurationDeviation?.toFixed(3) || '0';
+    
+    // 更新圖表區域顯示視覺化
+    const chartArea = document.getElementById('chart-area');
+    chartArea.innerHTML = `
+        <div class="viz-container">
+            <div class="viz-score">
+                <div class="viz-title">分數</div>
+                <div id="score-gauge"></div>
+            </div>
+            <div class="viz-pitch">
+                <div class="viz-title">音高準度</div>
+                <div id="pitch-chart"></div>
+            </div>
+        </div>
+    `;
+    
+    // 繪製視覺化
+    import('./practice-ui.js').then(ui => {
+        // 繪製分數儀表
+        const scoreGaugeContainer = document.getElementById('score-gauge');
+        if (scoreGaugeContainer) {
+            ui.drawScoreGauge(result.Score, scoreGaugeContainer);
+        }
+        
+        // 繪製音高偏差圖表
+        const pitchChartContainer = document.getElementById('pitch-chart');
+        if (pitchChartContainer && result.NoteComparison) {
+            ui.drawPitchDeviationChart(result.NoteComparison, pitchChartContainer);
+        }
+    });
+    
+    // 更新詳細結果面板
+    const resultsPanel = document.getElementById('results-panel');
+    if (resultsPanel) {
+        resultsPanel.innerHTML = `
+            <div class="results-grid">
+                <div class="result-stat">
+                    <div class="result-stat-value" id="result-matched">${result.MatchedNotes}/${result.TotalNotes}</div>
+                    <div class="result-stat-label">音符匹配</div>
+                </div>
+<div class="result-stat">
+                <div class="result-stat-value" id="result-pitch">${result.AveragePitchDeviation?.toFixed(1) || '0'}</div>
+                <div class="result-stat-label">平均音高偏差</div>
+            </div>
+            <div class="result-stat">
+                <div class="result-stat-value" id="result-duration">${result.AverageDurationDeviation?.toFixed(3) || '0'}</div>
+                <div class="result-stat-label">平均時長偏差</div>
+            </div>
+            </div>
+            <div class="detailed-results">
+                <h3>詳細音符比對</h3>
+                <div id="note-table-container"></div>
+            </div>
+        `;
+        resultsPanel.classList.add('visible');
+        
+        // 繪製音符比對表格
+        if (result.NoteComparison) {
+            import('./practice-ui.js').then(ui => {
+                const noteTableContainer = document.getElementById('note-table-container');
+                if (noteTableContainer) {
+                    ui.drawNoteComparisonTable(result.NoteComparison, noteTableContainer);
+                }
+            });
+        }
     }
 }

@@ -134,10 +134,11 @@
         import state from '../assets/js/state.js';
         import { loadSongs } from '../assets/js/api.js';
         import { playRange, togglePlayback, stopPlayback, getIsPlaying, setOnInterruptCallback } from '../assets/js/audio.js';
-        import {
-            selectTrack, selectStructure, onSongChange,
-            toggleAccompanimentTrack, startPractice, playRangeWithBeats, interruptPractice, stopReplayPlayback
-        } from '../assets/js/practice-business.js';
+import {
+    selectTrack, selectStructure, onSongChange,
+    toggleAccompanimentTrack, startPractice, playRangeWithBeats, interruptPractice, stopReplayPlayback,
+    analyzeAndSubmitRecording, getRecordedAudioBlob, isPracticeActivityActive
+} from '../assets/js/practice-business.js';
         import {
             renderVocalTracks, renderAccompanimentTracks, renderStructureList,
             updateSelectionUI, clearSelection, switchTab, logout
@@ -163,6 +164,7 @@
         window.switchTab = switchTab;
         window.logout = logout;
         window.stopReplayPlayback = stopReplayPlayback;
+        window.analyzeAndSubmitRecording = analyzeAndSubmitRecording;
 
         // 暴露 playRangeWithBeats 給 inline onclick（段落/句子的 ▶️ 按鈕）
         window.playRangeWithBeats = playRangeWithBeats;
@@ -173,7 +175,8 @@
         // 顯示/隱藏覆蓋提示訊息
         const warningPanel = document.getElementById('warning-panel');
         function updateWarningVisibility() {
-            if (recordedChunks && recordedChunks.length > 0 && !isPracticeActive) {
+            const hasRecording = getRecordedAudioBlob() !== null;
+            if (hasRecording && !isPracticeActivityActive()) {
                 warningPanel.style.display = 'block';
             } else {
                 warningPanel.style.display = 'none';
@@ -181,10 +184,13 @@
         }
         window.updateWarningVisibility = updateWarningVisibility;
 
-        // 也暴露 bridge 名稱（UI 模板中使用的 window.__ 開頭函式）
-        window.__selectTrack = selectTrack;
-        window.__selectStructure = selectStructure;
-        window.__toggleAccompanimentTrack = toggleAccompanimentTrack;
+// 也暴露 bridge 名稱（UI 模板中使用的 window.__ 開頭函式）
+window.__selectTrack = selectTrack;
+window.__selectStructure = selectStructure;
+window.__toggleAccompanimentTrack = toggleAccompanimentTrack;
+
+// 暴露 analyse and submit function for Phase 3
+window.analyzeAndSubmitRecording = analyzeAndSubmitRecording;
         
         // 提前中止播放功能
         window.__stopPlayback = function() {

@@ -41,6 +41,7 @@ vi.mock('../audio.js', () => ({
     scheduleBeats: mockScheduleBeats,
     getAudioCtx: mockGetAudioCtx,
     setUpdatePlayBtn: vi.fn(),
+    stopReplay: vi.fn(),
 }));
 
 // Mock practice-ui dynamic imports
@@ -380,6 +381,49 @@ describe('practice-business.js', () => {
             
             // Recording is triggered via setTimeout in playRangeWithBeats
             // Just verify the rest was called correctly
+        });
+    });
+
+    describe('showReplayButton', () => {
+        it('should remove existing replay button container before checking recordedWavBlob', () => {
+            const chartArea = document.getElementById('chart-area');
+            
+            // Manually create a replay button container (simulating previous showReplayButton call)
+            const existingContainer = document.createElement('div');
+            existingContainer.id = 'replay-btn-container';
+            existingContainer.innerHTML = '<button>🔁 回放錄音</button><button>⏹ 中斷回放</button>';
+            chartArea.appendChild(existingContainer);
+            
+            // Verify it exists
+            expect(document.getElementById('replay-btn-container')).not.toBeNull();
+            expect(chartArea.querySelectorAll('#replay-btn-container').length).toBe(1);
+            
+            // Call showReplayButton — recordedWavBlob is null so it won't create new buttons
+            // but should still remove the existing container first
+            businessModule.showReplayButton();
+            
+            // The container should be removed
+            expect(document.getElementById('replay-btn-container')).toBeNull();
+            expect(chartArea.querySelectorAll('#replay-btn-container').length).toBe(0);
+        });
+
+        it('should remove replay button container when stopReplayPlayback is called', () => {
+            const chartArea = document.getElementById('chart-area');
+            
+            // Create a replay button container
+            const container = document.createElement('div');
+            container.id = 'replay-btn-container';
+            container.innerHTML = '<button>🔁 回放錄音</button>';
+            chartArea.appendChild(container);
+            
+            // Verify it exists
+            expect(document.getElementById('replay-btn-container')).not.toBeNull();
+            
+            // Call stopReplayPlayback
+            businessModule.stopReplayPlayback();
+            
+            // Container should be removed
+            expect(document.getElementById('replay-btn-container')).toBeNull();
         });
     });
 });

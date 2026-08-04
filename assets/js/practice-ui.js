@@ -283,6 +283,11 @@ export function clearSelection() {
     document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
     document.getElementById('range-actions').style.display = 'none';
     document.getElementById('current-range-label').textContent = '未選擇';
+    // 隱藏結果面板
+    const resultsPanel = document.getElementById('results-panel');
+    if (resultsPanel) {
+        resultsPanel.classList.remove('visible');
+    }
     renderStructureList();
     renderLyricsPanel();
 }
@@ -297,4 +302,363 @@ export function switchTab(el, tab) {
 export function logout() {
     document.cookie = 'token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
     window.location.href = '/index.html';
+}
+
+// === 視覺化函式 ===
+
+/**
+ * 繪製分數儀表（圓形進度條）
+ * @param {number} score - 分數 (0-100)
+ * @param {HTMLElement} container - 容器元素
+ */
+export function drawScoreGauge(score, container) {
+    // 清空容器
+    container.innerHTML = '';
+    
+    // 創建 SVG 元素
+    const size = 120;
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("width", size);
+    svg.setAttribute("height", size);
+    svg.setAttribute("viewBox", `0 0 ${size} ${size}`);
+    
+    // 背景圓環
+    const backgroundCircle = document.createElementNS(svgNS, "circle");
+    backgroundCircle.setAttribute("cx", size/2);
+    backgroundCircle.setAttribute("cy", size/2);
+    backgroundCircle.setAttribute("r", size/2 - 10);
+    backgroundCircle.setAttribute("fill", "none");
+    backgroundCircle.setAttribute("stroke", "#333");
+    backgroundCircle.setAttribute("stroke-width", 8);
+    svg.appendChild(backgroundCircle);
+    
+    // 前景圓環 (根據分數)
+    const foregroundCircle = document.createElementNS(svgNS, "circle");
+    foregroundCircle.setAttribute("cx", size/2);
+    foregroundCircle.setAttribute("cy", size/2);
+    foregroundCircle.setAttribute("r", size/2 - 10);
+    foregroundCircle.setAttribute("fill", "none");
+    foregroundCircle.setAttribute("stroke", getScoreColor(score));
+    foregroundCircle.setAttribute("stroke-width", 8);
+    foregroundCircle.setAttribute("stroke-dasharray", `${score * (Math.PI * (size/2 - 10)) / 50}, 1000`);
+    foregroundCircle.setAttribute("stroke-dashoffset", `${(100 - score) * (Math.PI * (size/2 - 10)) / 50}`);
+    foregroundCircle.setAttribute("transform", `rotate(-90 ${size/2} ${size/2})`);
+    svg.appendChild(foregroundCircle);
+    
+    // 中心文字
+    const text = document.createElementNS(svgNS, "text");
+    text.setAttribute("x", size/2);
+    text.setAttribute("y", size/2 + 5);
+    text.setAttribute("text-anchor", "middle");
+    text.setAttribute("fill", "#fff");
+    text.setAttribute("font-size", "24");
+    text.setAttribute("font-weight", "bold");
+    text.textContent = Math.round(score);
+    svg.appendChild(text);
+    
+    // 分數標籤
+    const label = document.createElementNS(svgNS, "text");
+    label.setAttribute("x", size/2);
+    label.setAttribute("y", size/2 + 28);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("fill", "#888");
+    label.setAttribute("font-size", "14");
+    label.textContent = "分數";
+    svg.appendChild(label);
+    
+    container.appendChild(svg);
+}
+
+/**
+ * 根據分數取得顏色
+ * @param {number} score - 分數 (0-100)
+ * @returns {string} - 顏色代碼
+ */
+function getScoreColor(score) {
+    if (score >= 90) return "#4CAF50";    // 綠色 - 優秀
+    if (score >= 80) return "#8BC34A";    // 淺綠 - 良好
+    if (score >= 70) return "#FFC107";    // 黃色 - 普通
+    if (score >= 60) return "#FF9800";    // 橙色 - 及格
+    return "#F44336";                     // 紅色 - 不及格
+}
+
+/**
+ * 繪製音高偏差圖表
+ * @param {Array} noteComparisons - 音符比較陣列
+ * @param {HTMLElement} container - 容器元素
+ */
+export function drawPitchDeviationChart(noteComparisons, container) {
+    // 清空容器
+    container.innerHTML = '';
+    
+    if (!noteComparisons || noteComparisons.length === 0) {
+        container.textContent = '無音符資料';
+        return;
+    }
+    
+    // 創建 SVG 元素
+    const width = container.clientWidth || 300;
+    const height = 150;
+    const padding = 20;
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("width", width);
+    svg.setAttribute("height", height);
+    svg.setAttribute("style", "display: block; margin: 0 auto;");
+    
+    // 背景
+    const rect = document.createElementNS(svgNS, "rect");
+    rect.setAttribute("width", width);
+    rect.setAttribute("height", height);
+    rect.setAttribute("fill", "#1a1a2e");
+    svg.appendChild(rect);
+    
+    // X 軸 (時間)
+    const maxTime = Math.max(...noteComparisons.map(n => n.RefEnd));
+    const xScale = (width - 2 * padding) / Math.max(maxTime, 0.1);
+    
+    // Y 軸 (音分偏差)
+    const deviations = noteComparisons.map(n => n.PitchDeviationCents || 0);
+    const maxDeviation = Math.max(...deviations.map(Math.abs), 50); // 至少顯示 ±50 cent
+    const yScale = (height - 2 * padding) / (2 * maxDeviation);
+    const centerY = height / 2;
+    
+    // X 軸線
+    const xAxis = document.createElementNS(svgNS, "line");
+    xAxis.setAttribute("x1", padding);
+    xAxis.setAttribute("y1", centerY);
+    xAxis.setAttribute("x2", width - padding);
+    xAxis.setAttribute("y2", centerY);
+    xAxis.setAttribute("stroke", "#555");
+    xAxis.setAttribute("stroke-width", 1);
+    svg.appendChild(xAxis);
+    
+    // Y 軸線
+    const yAxis = document.createElementNS(svgNS, "line");
+    yAxis.setAttribute("x1", padding);
+    yAxis.setAttribute("y1", padding);
+    yAxis.setAttribute("x2", padding);
+    yAxis.setAttribute("y2", height - padding);
+    yAxis.setAttribute("stroke", "#555");
+    yAxis.setAttribute("stroke-width", 1);
+    svg.appendChild(yAxis);
+    
+    // 零線
+    const zeroLine = document.createElementNS(svgNS, "line");
+    zeroLine.setAttribute("x1", padding);
+    zeroLine.setAttribute("y1", centerY);
+    zeroLine.setAttribute("x2", width - padding);
+    zeroLine.setAttribute("y2", centerY);
+    zeroLine.setAttribute("stroke", "#333");
+    zeroLine.setAttribute("stroke-width", 1);
+    zeroLine.setAttribute("stroke-dasharray", "2,2");
+    svg.appendChild(zeroLine);
+    
+    // 數據點和連線
+    const path = document.createElementNS(svgNS, "path");
+    let pathData = `M ${padding} ${centerY - (deviations[0] || 0) * yScale}`;
+    
+    for (let i = 0; i < noteComparisons.length; i++) {
+        const note = noteComparisons[i];
+        const x = padding + (note.RefStart || 0) * xScale;
+        const y = centerY - ((note.PitchDeviationCents || 0) * yScale);
+        
+        if (i === 0) {
+            pathData += `M ${x} ${y}`;
+        } else {
+            pathData += `L ${x} ${y}`;
+        }
+        
+        // 資料點
+        const circle = document.createElementNS(svgNS, "circle");
+        circle.setAttribute("cx", x);
+        circle.setAttribute("cy", y);
+        circle.setAttribute("r", 4);
+        circle.setAttribute("fill", Math.abs(note.PitchDeviationCents || 0) < 20 ? "#4CAF50" : "#F44336");
+        circle.setAttribute("stroke", "#fff");
+        circle.setAttribute("stroke-width", 1);
+        svg.appendChild(circle);
+    }
+    
+    path.setAttribute("d", pathData);
+    path.setAttribute("fill", "none");
+    path.setAttribute("stroke", "#1E90FF");
+    path.setAttribute("stroke-width", 2);
+    svg.appendChild(path);
+    
+    // 標籤
+    const xLabel = document.createElementNS(svgNS, "text");
+    xLabel.setAttribute("x", width / 2);
+    xLabel.setAttribute("y", height - 5);
+    xLabel.setAttribute("text-anchor", "middle");
+    xLabel.setAttribute("fill", "#888");
+    xLabel.setAttribute("font-size", "12");
+    xLabel.textContent = "時間 (秒)";
+    svg.appendChild(xLabel);
+    
+    const yLabel = document.createElementNS(svgNS, "text");
+    yLabel.setAttribute("x", 8);
+    yLabel.setAttribute("y", 20);
+    yLabel.setAttribute("text-anchor", "middle");
+    yLabel.setAttribute("fill", "#888");
+    yLabel.setAttribute("font-size", "12");
+    yLabel.setAttribute("transform", "rotate(-90, 8, 20)");
+    yLabel.textContent = "音分偏差";
+    svg.appendChild(yLabel);
+    
+    container.appendChild(svg);
+}
+
+/**
+ * 繪製音符比對表格
+ * @param {Array} noteComparisons - 音符比較陣列
+ * @param {HTMLElement} container - 容器元素
+ */
+export function drawNoteComparisonTable(noteComparisons, container) {
+    // 清空容器
+    container.innerHTML = '';
+    
+    if (!noteComparisons || noteComparisons.length === 0) {
+        const noData = document.createElement('div');
+        noData.textContent = '無音符比對資料';
+        noData.style.textAlign = 'center';
+        noData.style.padding = '20px';
+        noData.style.color = '#888';
+        container.appendChild(noData);
+        return;
+    }
+    
+    // 創建表格
+    const table = document.createElement('table');
+    table.style.width = '100%';
+    table.style.borderCollapse = 'collapse';
+    table.style.margin = '10px 0';
+    
+    // 標題列
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    
+    const headers = ['音符', '開始時間', '結束時間', '狀態', '音高偏差 (cent)', '時長偏差 (秒)'];
+    headers.forEach(headerText => {
+        const th = document.createElement('th');
+        th.textContent = headerText;
+        th.style.border = '1px solid #444';
+        th.style.backgroundColor = '#1a1a2e';
+        th.style.color = '#eee';
+        th.style.padding = '8px';
+        th.style.textAlign = 'left';
+        th.style.fontSize = '13px';
+        headerRow.appendChild(th);
+    });
+    
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // 身體
+    const tbody = document.createElement('tbody');
+    
+    noteComparisons.forEach((note, index) => {
+        const tr = document.createElement('tr');
+        
+        // 音符名稱
+        const noteNameTd = document.createElement('td');
+        noteNameTd.textContent = getNoteName(note.RefPitch || 0);
+        noteNameTd.style.border = '1px solid #444';
+        noteNameTd.style.padding = '8px';
+        noteNameTd.style.color = '#ddd';
+        noteNameTd.style.fontSize = '13px';
+        tr.appendChild(noteNameTd);
+        
+        // 開始時間
+        const startTd = document.createElement('td');
+        startTd.textContent = (note.RefStart || 0).toFixed(2);
+        startTd.style.border = '1px solid #444';
+        startTd.style.padding = '8px';
+        startTd.style.color = '#ddd';
+        startTd.style.fontSize = '13px';
+        tr.appendChild(startTd);
+        
+        // 結束時間
+        const endTd = document.createElement('td');
+        endTd.textContent = (note.RefEnd || 0).toFixed(2);
+        endTd.style.border = '1px solid #444';
+        endTd.style.padding = '8px';
+        endTd.style.color = '#ddd';
+        endTd.style.fontSize = '13px';
+        tr.appendChild(endTd);
+        
+        // 狀態
+        const statusTd = document.createElement('td');
+        statusTd.textContent = note.MatchStatus || 'unknown';
+        statusTd.style.border = '1px solid #444';
+        statusTd.style.padding = '8px';
+        statusTd.style.textAlign = 'center';
+        statusTd.style.fontSize = '13px';
+        if (note.MatchStatus === 'matched') {
+            statusTd.style.color = '#4CAF50';
+            statusTd.style.fontWeight = 'bold';
+        } else {
+            statusTd.style.color = '#F44336';
+            statusTd.style.fontWeight = 'bold';
+        }
+        tr.appendChild(statusTd);
+        
+        // 音高偏差
+        const pitchTd = document.createElement('td');
+        const pitchDev = note.PitchDeviationCents || 0;
+        pitchTd.textContent = pitchDev.toFixed(1);
+        pitchTd.style.border = '1px solid #444';
+        pitchTd.style.padding = '8px';
+        pitchTd.style.color = Math.abs(pitchDev) < 20 ? '#4CAF50' : '#F44336';
+        pitchTd.style.fontSize = '13px';
+        tr.appendChild(pitchTd);
+        
+        // 時長偏差
+        const durationTd = document.createElement('td');
+        const durationDev = note.DurationDeviationSec || 0;
+        durationTd.textContent = durationDev.toFixed(3);
+        durationTd.style.border = '1px solid #444';
+        durationTd.style.padding = '8px';
+        durationTd.style.color = Math.abs(durationDev) < 0.1 ? '#4CAF50' : '#F44336';
+        durationTd.style.fontSize = '13px';
+        tr.appendChild(durationTd);
+        
+        tbody.appendChild(tr);
+    });
+    
+    table.appendChild(tbody);
+    container.appendChild(table);
+}
+
+/**
+ * 將 MIDI 音高號碼轉換為音符名稱
+ * @param {number} midiNote - MIDI 音高號碼 (0-127)
+ * @returns {string} - 音符名稱 (如 C4, D#4 等)
+ */
+function getNoteName(midiNote) {
+    const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+    const octave = Math.floor(midiNote / 12) - 1;
+    const noteIndex = midiNote % 12;
+    return `${noteNames[noteIndex]}${octave}`;
+}
+
+/**
+ * 繪製聲音類型分佈（母音/子音）
+ * @param {Object} analysisResult - 分析結果物件
+ * @param {HTMLElement} container - 容器元素
+ */
+export function drawVoicingDistribution(analysisResult, container) {
+    // 清空容器
+    container.innerHTML = '';
+    
+    // 這裡需要額外的資料來顯示母音/子音分佈
+    // 由於目前的評估結果中沒有這個資訊，我們顯示一個佔位符
+    const placeholder = document.createElement('div');
+    placeholder.textContent = '聲音類型分析 (需要額外的聲音處理)';
+    placeholder.style.textAlign = 'center';
+    placeholder.style.padding = '20px';
+    placeholder.style.color = '#888';
+    placeholder.style.fontStyle = 'italic';
+    container.appendChild(placeholder);
 }
