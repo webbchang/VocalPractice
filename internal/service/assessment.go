@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"math"
 	"sort"
 
@@ -61,12 +62,24 @@ func AssessRecordingWithVowelFiltering(
 
 	// Step 1: Detect all pitches from the recording
 	allDetectedNotes := detectPitchGo(samples, sampleRate)
+	fmt.Printf("[DEBUG] Pitch detection: %d notes detected from %d samples (sampleRate=%d)\n", len(allDetectedNotes), len(samples), sampleRate)
+	for i, n := range allDetectedNotes {
+		if i < 10 {
+			fmt.Printf("[DEBUG]   Detected note %d: Pitch=%d, Start=%.3f, End=%.3f\n", i, n.Pitch, n.StartTime, n.EndTime)
+		}
+	}
 
 	// Step 2: Filter detected notes to only include vowel portions
 	separator := NewVowelConsonantSeparator()
 	vowelNotes, err := separator.GetVowelOnlyNotes(samples, sampleRate, allDetectedNotes)
 	if err != nil {
 		return nil, err
+	}
+	fmt.Printf("[DEBUG] After vowel filtering: %d vowel notes remaining (from %d detected)\n", len(vowelNotes), len(allDetectedNotes))
+	for i, n := range vowelNotes {
+		if i < 10 {
+			fmt.Printf("[DEBUG]   Vowel note %d: Pitch=%d, Start=%.3f, End=%.3f\n", i, n.Pitch, n.StartTime, n.EndTime)
+		}
 	}
 
 	// Convert vowel notes to MIDINoteForAssessment

@@ -478,6 +478,7 @@ export function playRangeWithBeats(sectionStart, sectionEnd, withRecording = fal
  * Audio is captured as 16-bit PCM WAV.
  */
 let audioContext = null;
+let mediaStream = null; // Keep reference to media stream to stop tracks later
 let audioInput = null;
 let scriptProcessorNode = null;
 let audioBuffer = []; // Float32Array samples
@@ -543,7 +544,7 @@ function startMediaRecorder() {
 
     const constraints = {
         audio: {
-            sampleRate: 96000,
+            sampleRate: 48000, // Use a standard sample rate
             channelCount: 1,
             echoCancellation: false,
             noiseSuppression: false,
@@ -553,8 +554,23 @@ function startMediaRecorder() {
 
     navigator.mediaDevices.getUserMedia(constraints)
         .then(stream => {
+            // Store media stream so we can stop it later
+            mediaStream = stream;
+            
+            // Check if we actually got audio tracks
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length === 0) {
+                throw new Error('No audio input device found');
+            }
+            console.log(`Microphone access granted, using device: ${audioTracks[0].label || 'Unknown'}`);
+            
             // Use the shared AudioContext from audio.js
             audioContext = getAudioCtx();
+            
+            // Resume audio context if suspended (required for autoplay policies)
+            if (audioContext.state === 'suspended') {
+                audioContext.resume().catch(err => console.error('Failed to resume audio context:', err));
+            }
             
             // Create media stream source
             audioInput = audioContext.createMediaStreamSource(stream);
@@ -567,6 +583,22 @@ function startMediaRecorder() {
                 if (!isPracticeActive) return; // Stop processing if not actively recording
                 
                 const input = e.inputBuffer.getChannelData(0); // Mono - use channel 0
+                // Log audio levels periodically to see if we're getting sound
+                if (audioBuffer.length % 40960 === 0) { // Every ~0.85 seconds at 48kHz
+                    const recentSamples = input.slice(Math.max(0, input.length - 10));
+                    const hasNonZero = recentSamples.some(sample => Math.abs(sample) > 0.001);
+                    const avgLevel = recentSamples.reduce((sum, sample) => sum + Math.abs(sample), 0) / recentSamples.length;
+                    console.log(`Audio buffer: ${audioBuffer.length} samples, recent non-zero: ${hasNonZero}, avg level: ${avgLevel.toFixed(4)}, recent samples: [${recentSamples.map(x => x.toFixed(3)).join(', ')}]`);
+                }
+                // Log the first buffer to see if we are getting data
+                if (audioBuffer.length === 0) {
+                    console.log('First audio buffer received:', input.length, 'samples');
+                    console.log('First 10 samples:', input.slice(0, 10));
+                    // Also check min/max in first buffer
+                    const minVal = Math.min(...input);
+                    const maxVal = Math.max(...input);
+                    console.log('First buffer range: [', minVal.toFixed(4), ',', maxVal.toFixed(4), ']');
+                }
                 // Copy samples to our buffer
                 for (let i = 0; i < input.length; i++) {
                     audioBuffer.push(input[i]);
@@ -578,6 +610,7 @@ function startMediaRecorder() {
             scriptProcessorNode.connect(audioContext.destination);
             
             // Start processing (implicitly starts when connected)
+            console.log('Audio recording started successfully');
         })
         .catch(err => {
             console.error('Failed to start recording:', err);
@@ -600,14 +633,42 @@ export function stopMediaRecorder() {
         // Note: We don't close audioContext as it's shared and used for playback
         
         // Stop any media stream tracks (cleanup)
-        // Note: The MediaStreamTracks are stopped when we disconnect the audioInput
+        if (mediaStream) {
+            mediaStream.getTracks().forEach(track => {
+                console.log(`Stopping media track: ${track.kind}`);
+                track.stop();
+            });
+            mediaStream = null;
+        }
         
         // Encode WAV blob if we have audio data
         if (audioBuffer.length > 0) {
             // Use AudioContext sample rate if available, otherwise default to 44100
             const sampleRate = audioContext ? audioContext.sampleRate : 44100;
+            console.log('Encoding WAV: sample rate', sampleRate, 'buffer length', audioBuffer.length);
+            
+            // Analyze audio content
+            const nonZeroCount = audioBuffer.reduce((count, sample) => Math.abs(sample) > 0.001 ? count + 1 : count, 0);
+            const percentNonZero = (nonZeroCount / audioBuffer.length) * 100;
+            
+            // Calculate RMS (root mean square) as a measure of loudness
+            const sumSquares = audioBuffer.reduce((sum, sample) => sum + (sample * sample), 0);
+            const rms = Math.sqrt(sumSquares / audioBuffer.length);
+            
+            // Find peak amplitude (use reduce instead of Math.max with spread to avoid call stack limit)
+            const peak = audioBuffer.reduce((max, sample) => Math.abs(sample) > max ? Math.abs(sample) : max, 0);
+            
+            console.log(`Audio analysis: ${nonZeroCount}/${audioBuffer.length} non-zero samples (${percentNonZero.toFixed(2)}%), RMS: ${rms.toFixed(6)}, Peak: ${peak.toFixed(6)}`);
+            
+            if (percentNonZero < 0.1) {
+                console.warn('Warning: Audio appears to be mostly silence - check microphone permissions and input');
+            }
+            
             recordedWavBlob = encodeWAV(new Float32Array(audioBuffer), sampleRate);
+            console.log('Encoded WAV blob size:', recordedWavBlob.size, 'bytes');
             audioBuffer = []; // Clear buffer after encoding
+        } else {
+            console.log('No audio data to encode');
         }
         
         resolve();
@@ -748,17 +809,24 @@ export function isPracticeActivityActive() {
 export function getRecordedAudioBase64() {
     return new Promise((resolve, reject) => {
         if (!recordedWavBlob) {
+            console.log('No recorded WAV blob available');
             resolve(null);
             return;
         }
         
+        console.log('Converting WAV blob to base64, size:', recordedWavBlob.size, 'bytes');
+        
         const reader = new FileReader();
         reader.onloadend = () => {
             // Remove the data:audio/wav;base64, prefix if present
-            const base64String = reader.result.split(',')[1] || '';
+            const base64String = (reader.result || '').toString().split(',')[1] || '';
+            console.log('Base64 conversion complete, length:', base64String.length, 'characters');
             resolve(base64String);
         };
-        reader.onerror = reject;
+        reader.onerror = (err) => {
+            console.error('Failed to convert WAV blob to base64:', err);
+            reject(err);
+        };
         reader.readAsDataURL(recordedWavBlob);
     });
 }
@@ -835,8 +903,13 @@ export function startPractice() {
         }, 100);
     }, Math.max(0, (recStartDelay + recordingTrimOffset) * 1000));
 
-    // 設定練習結束時間（錄音結束後仍繼續錄到練習結束）
-    isPracticeActive = true;
+// 設定練習結束時間（錄音結束後仍繼續錄到練習結束）
+     // Resume audio context if suspended
+     const audioCtx = getAudioCtx();
+     if (audioCtx.state === 'suspended') {
+         audioCtx.resume().catch(err => console.error('Failed to resume audio context:', err));
+     }
+     isPracticeActive = true;
     practiceEndTimer = setTimeout(() => {
         cleanupPractice(false).then(() => { // 保留錄音，等待 MediaRecorder onstop 完成
             // 分析並提交錄音
@@ -910,11 +983,15 @@ export async function analyzeAndSubmitRecording() {
             throw new Error('無可用的參考音符進行分析');
         }
         
-        // 取得音訊樣本率 (從 AudioContext 取得)
+// 取得音訊樣本率 (從 AudioContext 取得)
         const audioContext = getAudioCtx();
         const sampleRate = audioContext ? audioContext.sampleRate : 44100;
         
-// 呼叫分析 API
+        // Log what we're about to send to the API
+        console.log('Sending to API - audio length:', audioBase64.length, 'base64 chars, reference notes:', referenceNotes.length);
+        console.log('First reference note sample:', referenceNotes[0]);
+        
+        // 呼叫分析 API
         const analysisResult = await api('/assessments/analyze', {
             method: 'POST',
             body: JSON.stringify({
@@ -923,6 +1000,14 @@ export async function analyzeAndSubmitRecording() {
                 reference_notes: referenceNotes
             })
         });
+        
+        // Log the complete analysis result
+        console.log('Analysis API response:', analysisResult);
+        if (analysisResult.note_comparison || analysisResult.NoteComparison) {
+            const nc = analysisResult.note_comparison || analysisResult.NoteComparison;
+            console.log('Note comparison sample (first 3):', nc.slice(0, 3));
+            console.log('Note comparison field names for first item:', Object.keys(nc[0] || {}));
+        }
         
         // 更新分析結果 UI
         updateAnalysisResultsUI(analysisResult);
@@ -939,11 +1024,11 @@ export async function analyzeAndSubmitRecording() {
                 score: analysisResult.Score,
                 total_notes: analysisResult.TotalNotes,
                 matched_notes: analysisResult.MatchedNotes,
-                average_pitch_deviation: result.AveragePitchDeviation,
-                average_duration_deviation: result.AverageDurationDeviation,
-                pitch_deviation: result.PitchDeviation,
-                duration_deviation: result.DurationDeviation,
-                note_comparison: result.NoteComparison
+                average_pitch_deviation: analysisResult.AveragePitchDeviation,
+                average_duration_deviation: analysisResult.AverageDurationDeviation,
+                pitch_deviation: analysisResult.PitchDeviation,
+                duration_deviation: analysisResult.DurationDeviation,
+                note_comparison: analysisResult.NoteComparison
             })
         });
         */
@@ -983,10 +1068,36 @@ export async function analyzeAndSubmitRecording() {
  * @param {Object} result - 分析結果物件
  */
 function updateAnalysisResultsUI(result) {
+    // 打印完整的 API 回應結果進行診斷
+    console.log('Updating analysis results UI with:', result);
+    
     // 更新結果面板
-    document.getElementById('result-matched').textContent = `${result.MatchedNotes}/${result.TotalNotes}`;
-    document.getElementById('result-pitch').textContent = result.AveragePitchDeviation?.toFixed(1) || '0';
-    document.getElementById('result-duration').textContent = result.AverageDurationDeviation?.toFixed(3) || '0';
+    // Note: API returns snake_case keys (score, total_notes, matched_notes, etc.)
+    const matchedNotes = result.matched_notes ?? result.MatchedNotes ?? 0;
+    const totalNotes = result.total_notes ?? result.TotalNotes ?? 0;
+    const avgPitchDev = result.average_pitch_deviation ?? result.AveragePitchDeviation ?? 0;
+    const avgDurationDev = result.average_duration_deviation ?? result.AverageDurationDeviation ?? 0;
+    const score = result.score ?? result.Score ?? 0;
+    const noteComparison = result.note_comparison ?? result.NoteComparison ?? [];
+    
+    console.log('Normalized values - Score:', score, 'Matched:', matchedNotes + '/' + totalNotes, 'NoteComparison length:', noteComparison.length);
+    
+    // Normalize note comparison fields to PascalCase for UI functions
+    const normalizedNoteComparison = noteComparison.map(note => {
+        const matchStatus = note.match_status ?? note.MatchStatus ?? 'unknown';
+        return {
+            RefPitch: note.ref_pitch ?? note.RefPitch ?? 0,
+            RefStart: note.ref_start ?? note.RefStart ?? 0,
+            RefEnd: note.ref_end ?? note.RefEnd ?? 0,
+            MatchStatus: typeof matchStatus === 'string' ? matchStatus.toLowerCase() : 'unknown',
+            PitchDeviationCents: note.pitch_deviation_cents ?? note.PitchDeviationCents ?? 0,
+            DurationDeviationSec: note.duration_deviation_sec ?? note.DurationDeviationSec ?? 0
+        };
+    });
+    
+    document.getElementById('result-matched').textContent = `${matchedNotes}/${totalNotes}`;
+    document.getElementById('result-pitch').textContent = avgPitchDev.toFixed(1);
+    document.getElementById('result-duration').textContent = avgDurationDev.toFixed(3);
     
     // 更新圖表區域顯示視覺化
     const chartArea = document.getElementById('chart-area');
@@ -1008,13 +1119,13 @@ function updateAnalysisResultsUI(result) {
         // 繪製分數儀表
         const scoreGaugeContainer = document.getElementById('score-gauge');
         if (scoreGaugeContainer) {
-            ui.drawScoreGauge(result.Score, scoreGaugeContainer);
+            ui.drawScoreGauge(score, scoreGaugeContainer);
         }
         
         // 繪製音高偏差圖表
         const pitchChartContainer = document.getElementById('pitch-chart');
-        if (pitchChartContainer && result.NoteComparison) {
-            ui.drawPitchDeviationChart(result.NoteComparison, pitchChartContainer);
+        if (pitchChartContainer && normalizedNoteComparison.length > 0) {
+            ui.drawPitchDeviationChart(normalizedNoteComparison, pitchChartContainer);
         }
     });
     
@@ -1024,16 +1135,16 @@ function updateAnalysisResultsUI(result) {
         resultsPanel.innerHTML = `
             <div class="results-grid">
                 <div class="result-stat">
-                    <div class="result-stat-value" id="result-matched">${result.MatchedNotes}/${result.TotalNotes}</div>
+                    <div class="result-stat-value" id="result-matched">${matchedNotes}/${totalNotes}</div>
                     <div class="result-stat-label">音符匹配</div>
                 </div>
-<div class="result-stat">
-                <div class="result-stat-value" id="result-pitch">${result.AveragePitchDeviation?.toFixed(1) || '0'}</div>
-                <div class="result-stat-label">平均音高偏差</div>
-            </div>
-            <div class="result-stat">
-                <div class="result-stat-value" id="result-duration">${result.AverageDurationDeviation?.toFixed(3) || '0'}</div>
-                <div class="result-stat-label">平均時長偏差</div>
+                <div class="result-stat">
+                    <div class="result-stat-value" id="result-pitch">${avgPitchDev.toFixed(1)}</div>
+                    <div class="result-stat-label">平均音高偏差</div>
+                </div>
+                <div class="result-stat">
+                    <div class="result-stat-value" id="result-duration">${avgDurationDev.toFixed(3)}</div>
+                    <div class="result-stat-label">平均時長偏差</div>
             </div>
             </div>
             <div class="detailed-results">
@@ -1044,11 +1155,11 @@ function updateAnalysisResultsUI(result) {
         resultsPanel.classList.add('visible');
         
         // 繪製音符比對表格
-        if (result.NoteComparison) {
+        if (normalizedNoteComparison.length > 0) {
             import('./practice-ui.js').then(ui => {
                 const noteTableContainer = document.getElementById('note-table-container');
                 if (noteTableContainer) {
-                    ui.drawNoteComparisonTable(result.NoteComparison, noteTableContainer);
+                    ui.drawNoteComparisonTable(normalizedNoteComparison, noteTableContainer);
                 }
             });
         }

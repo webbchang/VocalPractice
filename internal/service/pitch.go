@@ -1,6 +1,7 @@
 package service
 
 import (
+	"fmt"
 	"math"
 	"sort"
 )
@@ -19,12 +20,15 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 	windowSize := 2048
 	hopSize := int(float64(sampleRate) * 0.05) // 50ms
 	silenceThreshold := 0.01
-	correlationThreshold := 0.3
+	correlationThreshold := 0.1  // Lowered from 0.3 for real vocal recordings
 	minFreq := 50.0
 	maxFreq := 2000.0
 
 	var notes []MIDINoteForTest
 	var currentNote *MIDINoteForTest
+
+	// Diagnostic counters
+	var totalWindows, silenceSkips, lowCorrSkips, rangeSkips, detectedCount int
 
 	for start := 0; start+windowSize < len(samples); start += hopSize {
 		end := start + windowSize
@@ -32,6 +36,8 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 			end = len(samples)
 		}
 		window := samples[start:end]
+
+		totalWindows++
 
 		// RMS energy
 		var rms float64
@@ -41,6 +47,7 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 		rms = math.Sqrt(rms / float64(len(window)))
 
 		if rms < float64(silenceThreshold) {
+			silenceSkips++
 			if currentNote != nil {
 				currentNote.EndTime = float64(start) / float64(sampleRate)
 				notes = append(notes, *currentNote)
@@ -59,22 +66,40 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 			maxPeriod = len(window) / 2
 		}
 
-		// Autocorrelation
+		// Autocorrelation - normalized using zero-lag autocorrelation
+		// This gives a correlation coefficient between 0 and 1
 		bestPeriod := 0
 		maxCorr := 0.0
+		var zeroLag float64
+		for i := 0; i < len(window); i++ {
+			zeroLag += window[i] * window[i]
+		}
+		zeroLag /= float64(len(window))
+		if zeroLag == 0 {
+			continue
+		}
 		for period := minPeriod; period <= maxPeriod; period++ {
 			var corr float64
 			for i := 0; i < len(window)-period; i++ {
 				corr += window[i] * window[i+period]
 			}
 			corr /= float64(len(window))
-			if corr > maxCorr {
-				maxCorr = corr
+			normalizedCorr := corr / zeroLag
+			if normalizedCorr > maxCorr {
+				maxCorr = normalizedCorr
 				bestPeriod = period
 			}
 		}
 
 		if maxCorr < float64(correlationThreshold) || bestPeriod == 0 {
+			lowCorrSkips++
+			if start < hopSize*10 { // Log first few windows for debugging
+				if maxCorr < float64(correlationThreshold) {
+					fmt.Printf("[DEBUG] Pitch corr too low at start=%d: rms=%.4f, maxCorr=%.3f < %.1f threshold\n", start, rms, maxCorr, correlationThreshold)
+				} else if bestPeriod == 0 {
+					fmt.Printf("[DEBUG] Pitch no period at start=%d: rms=%.4f, maxCorr=%.3f\n", start, rms, maxCorr)
+				}
+			}
 			if currentNote != nil {
 				currentNote.EndTime = float64(start) / float64(sampleRate)
 				notes = append(notes, *currentNote)
@@ -88,6 +113,10 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 		roundedPitch := int(math.Round(midiNote))
 
 		if roundedPitch < 40 || roundedPitch > 93 {
+			rangeSkips++
+			if start < hopSize*10 {
+				fmt.Printf("[DEBUG] Pitch out of range at start=%d: freq=%.1fHz, midi=%.1f (rounded=%d), skipped\n", start, freq, midiNote, roundedPitch)
+			}
 			continue
 		}
 
@@ -120,11 +149,20 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 
 	// Filter short notes
 	var filtered []MIDINoteForTest
+	var shortNoteSkips int
 	for _, n := range notes {
-		if n.EndTime-n.StartTime > 0.1 {
+		duration := n.EndTime - n.StartTime
+		if duration > 0.1 {
 			filtered = append(filtered, n)
+		} else {
+			shortNoteSkips++
 		}
 	}
+
+	detectedCount = len(filtered)
+	fmt.Printf("[DEBUG] detectPitchGo: totalWindows=%d, silenceSkips=%d, lowCorrSkips=%d, rangeSkips=%d, rawNotes=%d, shortNoteSkips=%d, finalFiltered=%d\n",
+		totalWindows, silenceSkips, lowCorrSkips, rangeSkips, len(notes), shortNoteSkips, detectedCount)
+
 	return filtered
 }
 

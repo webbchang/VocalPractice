@@ -29,6 +29,12 @@ test_data/
 output/
 uploads_test/
 
+# Debug uploads
+debug_uploads/
+
+# Test server binary
+/test_server_test
+
 # TLS certificates
 tls/
 

@@ -1,12 +1,15 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"bytes"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -123,10 +126,42 @@ func (h *UserAssessmentsHandler) AnalyzeRecording(w http.ResponseWriter, r *http
 		return
 	}
 
+	// Save the WAV file for debugging
+	go func() {
+		debugDir := "./debug_uploads"
+		if err := os.MkdirAll(debugDir, 0755); err == nil {
+			timestamp := time.Now().Format("20060102_150405")
+			filename := fmt.Sprintf("%s_user_recording.wav", timestamp)
+			fullpath := filepath.Join(debugDir, filename)
+			if err := os.WriteFile(fullpath, audioBytes, 0644); err == nil {
+				fmt.Printf("[DEBUG] Saved user recording for debugging: %s (%d bytes)\n", fullpath, len(audioBytes))
+			}
+		}
+	}()
+
 	samples, sampleRate, err := service.DecodeAudioData(audioBytes, req.AudioFormat)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "audio decode failed: "+err.Error())
 		return
+	}
+
+	// Log sample statistics for debugging
+	if len(samples) > 0 {
+		var sumSquares float64
+		var maxVal float64
+		for _, s := range samples {
+			sumSquares += s * s
+			absS := s
+			if absS < 0 {
+				absS = -absS
+			}
+			if absS > maxVal {
+				maxVal = absS
+			}
+		}
+		rms := math.Sqrt(sumSquares / float64(len(samples)))
+		fmt.Printf("[DEBUG] Audio samples: count=%d, sampleRate=%d, duration=%.2fs, rms=%.6f, maxAmplitude=%.6f\n",
+			len(samples), sampleRate, float64(len(samples))/float64(sampleRate), rms, maxVal)
 	}
 
 	result, err := service.AssessRecordingWithVowelFiltering(samples, sampleRate, req.ReferenceNotes)

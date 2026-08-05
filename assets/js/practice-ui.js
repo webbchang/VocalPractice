@@ -415,11 +415,11 @@ export function drawPitchDeviationChart(noteComparisons, container) {
     svg.appendChild(rect);
     
     // X 軸 (時間)
-    const maxTime = Math.max(...noteComparisons.map(n => n.RefEnd));
+    const maxTime = Math.max(...noteComparisons.map(n => n.ref_end ?? n.RefEnd ?? 0));
     const xScale = (width - 2 * padding) / Math.max(maxTime, 0.1);
     
     // Y 軸 (音分偏差)
-    const deviations = noteComparisons.map(n => n.PitchDeviationCents || 0);
+    const deviations = noteComparisons.map(n => n.pitch_deviation_cents ?? n.PitchDeviationCents ?? 0);
     const maxDeviation = Math.max(...deviations.map(Math.abs), 50); // 至少顯示 ±50 cent
     const yScale = (height - 2 * padding) / (2 * maxDeviation);
     const centerY = height / 2;
@@ -461,8 +461,8 @@ export function drawPitchDeviationChart(noteComparisons, container) {
     
     for (let i = 0; i < noteComparisons.length; i++) {
         const note = noteComparisons[i];
-        const x = padding + (note.RefStart || 0) * xScale;
-        const y = centerY - ((note.PitchDeviationCents || 0) * yScale);
+        const x = padding + (note.ref_start ?? note.RefStart ?? 0) * xScale;
+        const y = centerY - ((note.pitch_deviation_cents ?? note.PitchDeviationCents ?? 0) * yScale);
         
         if (i === 0) {
             pathData += `M ${x} ${y}`;
@@ -475,7 +475,7 @@ export function drawPitchDeviationChart(noteComparisons, container) {
         circle.setAttribute("cx", x);
         circle.setAttribute("cy", y);
         circle.setAttribute("r", 4);
-        circle.setAttribute("fill", Math.abs(note.PitchDeviationCents || 0) < 20 ? "#4CAF50" : "#F44336");
+        circle.setAttribute("fill", Math.abs(note.pitch_deviation_cents ?? note.PitchDeviationCents ?? 0) < 20 ? "#4CAF50" : "#F44336");
         circle.setAttribute("stroke", "#fff");
         circle.setAttribute("stroke-width", 1);
         svg.appendChild(circle);
@@ -563,7 +563,8 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         
         // 音符名稱
         const noteNameTd = document.createElement('td');
-        noteNameTd.textContent = getNoteName(note.RefPitch || 0);
+        const refPitch = note.ref_pitch ?? note.RefPitch ?? 0;
+        noteNameTd.textContent = getNoteName(refPitch);
         noteNameTd.style.border = '1px solid #444';
         noteNameTd.style.padding = '8px';
         noteNameTd.style.color = '#ddd';
@@ -572,7 +573,8 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         
         // 開始時間
         const startTd = document.createElement('td');
-        startTd.textContent = (note.RefStart || 0).toFixed(2);
+        const refStart = note.ref_start ?? note.RefStart ?? 0;
+        startTd.textContent = refStart.toFixed(2);
         startTd.style.border = '1px solid #444';
         startTd.style.padding = '8px';
         startTd.style.color = '#ddd';
@@ -581,7 +583,8 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         
         // 結束時間
         const endTd = document.createElement('td');
-        endTd.textContent = (note.RefEnd || 0).toFixed(2);
+        const refEnd = note.ref_end ?? note.RefEnd ?? 0;
+        endTd.textContent = refEnd.toFixed(2);
         endTd.style.border = '1px solid #444';
         endTd.style.padding = '8px';
         endTd.style.color = '#ddd';
@@ -590,12 +593,14 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         
         // 狀態
         const statusTd = document.createElement('td');
-        statusTd.textContent = note.MatchStatus || 'unknown';
+        const matchStatus = note.match_status ?? note.MatchStatus ?? 'unknown';
+        const matchStatusLower = typeof matchStatus === 'string' ? matchStatus.toLowerCase() : 'unknown';
+        statusTd.textContent = matchStatus;
         statusTd.style.border = '1px solid #444';
         statusTd.style.padding = '8px';
         statusTd.style.textAlign = 'center';
         statusTd.style.fontSize = '13px';
-        if (note.MatchStatus === 'matched') {
+        if (matchStatusLower === 'matched') {
             statusTd.style.color = '#4CAF50';
             statusTd.style.fontWeight = 'bold';
         } else {
@@ -606,7 +611,7 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         
         // 音高偏差
         const pitchTd = document.createElement('td');
-        const pitchDev = note.PitchDeviationCents || 0;
+        const pitchDev = note.pitch_deviation_cents ?? note.PitchDeviationCents ?? 0;
         pitchTd.textContent = pitchDev.toFixed(1);
         pitchTd.style.border = '1px solid #444';
         pitchTd.style.padding = '8px';
@@ -616,7 +621,7 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         
         // 時長偏差
         const durationTd = document.createElement('td');
-        const durationDev = note.DurationDeviationSec || 0;
+        const durationDev = note.duration_deviation_sec ?? note.DurationDeviationSec ?? 0;
         durationTd.textContent = durationDev.toFixed(3);
         durationTd.style.border = '1px solid #444';
         durationTd.style.padding = '8px';
