@@ -26,6 +26,7 @@ func makeAnalyzeTestRouter(store storage.Store, jwtSecret string) (*chi.Mux, *Au
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(authHandler.Middleware)
 		r.Post("/assessments/analyze", assessmentsHandler.AnalyzeRecording)
+		r.Post("/assessments/analyze/basic", assessmentsHandler.AnalyzeRecordingWithoutFiltering)
 	})
 	return r, authHandler, adminID
 }
@@ -340,7 +341,74 @@ func TestAnalyzeRecordingDefaultFormat(t *testing.T) {
 	r.ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 (default format should default to WAV), got %d, body=%s", rec.Code, rec.Body.String())
+
+		var resp map[string]interface{}
+		if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("failed to decode response: %v", err)
+		}
+		if resp["total_notes"] != float64(1) {
+			t.Errorf("expected total_notes=1, got %v", resp["total_notes"])
+		}
+	}
+}
+
+// TestAnalyzeRecordingBasicEndpoint tests the /analyze/basic endpoint (without vowel filtering)
+func TestAnalyzeRecordingBasicEndpoint(t *testing.T) {
+	store := storage.NewMemoryStore()
+	r, authHandler, userID := makeAnalyzeTestRouter(store, "test-secret")
+	token, _ := authHandler.generateToken(userID, "admin@localhost")
+
+	// 440 Hz = MIDI 69 (A4)
+	freq := 440.0
+	sampleRate := 44100
+	duration := 3.0
+	wavBytes := makeSineWAVBytes(freq, duration, sampleRate, 16)
+	audioB64 := base64.StdEncoding.EncodeToString(wavBytes)
+
+	refNotes := []domain.MIDINote{
+		{Pitch: 69, Velocity: 100, StartTime: 0.2, EndTime: 2.8},
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"audio_data":      audioB64,
+		"audio_format":    "wav",
+		"reference_notes": refNotes,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/assessments/analyze/basic", strings.NewReader(string(body)))
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d, body=%s", rec.Code, rec.Body.String())
+	}
+
+	var resp service.AssessmentResultForAssessment
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.TotalNotes != 1 {
+		t.Errorf("expected total_notes=1, got %d", resp.TotalNotes)
+	}
+	if resp.Score < 0 || resp.Score > 100 {
+		t.Errorf("score out of range [0,100]: %d", resp.Score)
+	}
+}
+
+// TestAnalyzeRecordingBasicRejectsMissingAuth tests that /analyze/basic requires auth
+func TestAnalyzeRecordingBasicRejectsMissingAuth(t *testing.T) {
+	store := storage.NewMemoryStore()
+	r, _, _ := makeAnalyzeTestRouter(store, "test-secret")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/assessments/analyze/basic", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d, body=%s", rec.Code, rec.Body.String())
 	}
 }
 

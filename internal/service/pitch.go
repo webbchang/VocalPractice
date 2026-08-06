@@ -8,9 +8,10 @@ import (
 
 // MIDINoteForTest is a simplified note struct for pitch detection and assessment
 type MIDINoteForTest struct {
-	Pitch     int
-	StartTime float64
-	EndTime   float64
+	Pitch      int
+	PitchFloat float64 // Float MIDI value for sub-semitone pitch deviation calculation
+	StartTime  float64
+	EndTime    float64
 }
 
 // detectPitchGo performs autocorrelation-based pitch detection
@@ -28,7 +29,7 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 	var currentNote *MIDINoteForTest
 
 	// Diagnostic counters
-	var totalWindows, silenceSkips, lowCorrSkips, rangeSkips, detectedCount int
+	var totalWindows, silenceSkips, lowCorrSkips, rangeSkips, shortNoteSkips, detectedCount int
 
 	for start := 0; start+windowSize < len(samples); start += hopSize {
 		end := start + windowSize
@@ -124,21 +125,26 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 
 		if currentNote == nil {
 			currentNote = &MIDINoteForTest{
-				Pitch:     roundedPitch,
-				StartTime: time,
-				EndTime:   time + float64(hopSize)/float64(sampleRate),
+				Pitch:      roundedPitch,
+				PitchFloat: midiNote,
+				StartTime:  time,
+				EndTime:    time + float64(hopSize)/float64(sampleRate),
 			}
 		} else {
 			if math.Abs(float64(currentNote.Pitch-roundedPitch)) >= 2 {
 				currentNote.EndTime = time
 				notes = append(notes, *currentNote)
 				currentNote = &MIDINoteForTest{
-					Pitch:     roundedPitch,
-					StartTime: time,
-					EndTime:   time + float64(hopSize)/float64(sampleRate),
+					Pitch:      roundedPitch,
+					PitchFloat: midiNote,
+					StartTime:  time,
+					EndTime:    time + float64(hopSize)/float64(sampleRate),
 				}
 			} else {
 				currentNote.EndTime = time + float64(hopSize)/float64(sampleRate)
+				// Track the float MIDI value for pitch deviation
+				// Average the float MIDI across the note duration
+				currentNote.PitchFloat = (currentNote.PitchFloat + midiNote) / 2
 			}
 		}
 	}
@@ -149,7 +155,6 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 
 	// Filter short notes
 	var filtered []MIDINoteForTest
-	var shortNoteSkips int
 	for _, n := range notes {
 		duration := n.EndTime - n.StartTime
 		if duration > 0.1 {
@@ -168,10 +173,11 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 
 // MergedNote groups consecutive same-pitch notes
 type MergedNote struct {
-	Pitch     int
-	StartTime float64
-	EndTime   float64
-	EventIdx  []int
+	Pitch      int
+	PitchFloat float64
+	StartTime  float64
+	EndTime    float64
+	EventIdx   []int
 }
 
 // mergeSamePitchNotes groups consecutive same-pitch notes whose gap < 50ms.
@@ -200,10 +206,11 @@ func mergeSamePitchNotes(notes []MIDINoteForTest) []MergedNote {
 
 	var merged []MergedNote
 	current := MergedNote{
-		Pitch:     sorted[0].Pitch,
-		StartTime: sorted[0].StartTime,
-		EndTime:   sorted[0].EndTime,
-		EventIdx:  []int{sortedToOrig[0]},
+		Pitch:      sorted[0].Pitch,
+		PitchFloat: sorted[0].PitchFloat,
+		StartTime:  sorted[0].StartTime,
+		EndTime:    sorted[0].EndTime,
+		EventIdx:   []int{sortedToOrig[0]},
 	}
 
 	gapThreshold := 0.05
@@ -215,14 +222,18 @@ func mergeSamePitchNotes(notes []MIDINoteForTest) []MergedNote {
 			if n.EndTime > current.EndTime {
 				current.EndTime = n.EndTime
 			}
+			// Weighted average of float pitch
+			totalWeight := float64(len(current.EventIdx))
+			current.PitchFloat = (current.PitchFloat*totalWeight + n.PitchFloat) / (totalWeight + 1)
 			current.EventIdx = append(current.EventIdx, sortedToOrig[i])
 		} else {
 			merged = append(merged, current)
 			current = MergedNote{
-				Pitch:     n.Pitch,
-				StartTime: n.StartTime,
-				EndTime:   n.EndTime,
-				EventIdx:  []int{sortedToOrig[i]},
+				Pitch:      n.Pitch,
+				PitchFloat: n.PitchFloat,
+				StartTime:  n.StartTime,
+				EndTime:    n.EndTime,
+				EventIdx:   []int{sortedToOrig[i]},
 			}
 		}
 	}
@@ -295,7 +306,9 @@ func compareNotesGo(reference, detected []MIDINoteForTest) AssessmentResult {
 		if bestMatch >= 0 {
 			usedDetected[bestMatch] = true
 			det := detSorted[bestMatch]
-			pitchDev := float64(ref.Pitch-det.Pitch) * 100.0
+			// Calculate pitch deviation in cents using float MIDI values
+			// 1 MIDI note = 100 cents
+			pitchDev := (ref.PitchFloat - det.PitchFloat) * 100.0
 			refDuration := ref.EndTime - ref.StartTime
 			detDuration := det.EndTime - det.StartTime
 			durationDev := refDuration - detDuration
@@ -306,7 +319,7 @@ func compareNotesGo(reference, detected []MIDINoteForTest) AssessmentResult {
 				RefStart:             ref.StartTime,
 				RefEnd:               ref.EndTime,
 				UserStart:            det.StartTime,
-				UserEnd:              det.EndTime,
+				UserEnd:            det.EndTime,
 				PitchDeviationCents:  pitchDev,
 				DurationDeviationSec: durationDev,
 				MatchStatus:          "matched",
@@ -422,7 +435,9 @@ func compareMergedNotes(allRefs []MIDINoteForTest, merged []MergedNote, detected
 			det := detSorted[bestIdx]
 
 			detLen := det.EndTime - det.StartTime
-			pitchDev := float64(mg.Pitch-det.Pitch) * 100.0
+			// Calculate pitch deviation in cents using float MIDI values
+			// This captures sub-semitone deviations that integer comparison misses
+			pitchDev := (mg.PitchFloat - det.PitchFloat) * 100.0
 			durDev := mgLen - detLen
 
 			for _, eidx := range mg.EventIdx {

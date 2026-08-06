@@ -196,6 +196,39 @@ export async function selectTrack(trackId) {
     const { renderStructureList, renderLyricsPanel } = await import('./practice-ui.js');
     renderStructureList();
     renderLyricsPanel();
+    
+    // Auto-select first structure if available
+    if (state.flatItems.length > 0) {
+        const firstId = state.flatItems[0].data.id;
+        state.selectionRange = { from: 0, to: 0 };
+        computeSelectedStructure();
+        generateReferenceData();
+        const { renderStructureList: reRender, renderLyricsPanel: reRenderLyrics } = await import('./practice-ui.js');
+        reRender();
+        reRenderLyrics();
+        // Update range info display
+        const { selectedStructure } = state;
+        if (selectedStructure) {
+            const formatTime = (sec) => {
+                if (sec == null) return '0:00';
+                const m = Math.floor(sec / 60);
+                const s = Math.floor(sec % 60);
+                return m + ':' + s.toString().padStart(2, '0');
+            };
+            const rangeInfo = document.getElementById('range-info');
+            if (rangeInfo) {
+                rangeInfo.textContent = `🎯 ${selectedStructure.title}：${formatTime(selectedStructure.start)} - ${formatTime(selectedStructure.end)}`;
+            }
+            const rangeActions = document.getElementById('range-actions');
+            if (rangeActions) {
+                rangeActions.style.display = 'flex';
+            }
+            const currentRangeLabel = document.getElementById('current-range-label');
+            if (currentRangeLabel) {
+                currentRangeLabel.textContent = `${selectedStructure.title} (${formatTime(selectedStructure.start)})`;
+            }
+        }
+    }
 }
 
 /**
@@ -642,29 +675,39 @@ export function stopMediaRecorder() {
         }
         
         // Encode WAV blob if we have audio data
-        if (audioBuffer.length > 0) {
+         if (audioBuffer.length > 0) {
             // Use AudioContext sample rate if available, otherwise default to 44100
             const sampleRate = audioContext ? audioContext.sampleRate : 44100;
             console.log('Encoding WAV: sample rate', sampleRate, 'buffer length', audioBuffer.length);
             
+            // Trim count-in (3-beat lead-in) from the beginning of the recording
+            let bufferToEncode = audioBuffer;
+            if (state.recordingTrimOffset > 0) {
+                const trimSamples = Math.floor(state.recordingTrimOffset * sampleRate);
+                if (trimSamples > 0 && trimSamples < audioBuffer.length) {
+                    bufferToEncode = audioBuffer.slice(trimSamples);
+                    console.log('Trimmed count-in:', trimSamples, 'samples (' + state.recordingTrimOffset.toFixed(3) + 's), remaining:', bufferToEncode.length, 'samples');
+                }
+            }
+            
             // Analyze audio content
-            const nonZeroCount = audioBuffer.reduce((count, sample) => Math.abs(sample) > 0.001 ? count + 1 : count, 0);
-            const percentNonZero = (nonZeroCount / audioBuffer.length) * 100;
+            const nonZeroCount = bufferToEncode.reduce((count, sample) => Math.abs(sample) > 0.001 ? count + 1 : count, 0);
+            const percentNonZero = (nonZeroCount / bufferToEncode.length) * 100;
             
             // Calculate RMS (root mean square) as a measure of loudness
-            const sumSquares = audioBuffer.reduce((sum, sample) => sum + (sample * sample), 0);
-            const rms = Math.sqrt(sumSquares / audioBuffer.length);
+            const sumSquares = bufferToEncode.reduce((sum, sample) => sum + (sample * sample), 0);
+            const rms = Math.sqrt(sumSquares / bufferToEncode.length);
             
             // Find peak amplitude (use reduce instead of Math.max with spread to avoid call stack limit)
-            const peak = audioBuffer.reduce((max, sample) => Math.abs(sample) > max ? Math.abs(sample) : max, 0);
+            const peak = bufferToEncode.reduce((max, sample) => Math.abs(sample) > max ? Math.abs(sample) : max, 0);
             
-            console.log(`Audio analysis: ${nonZeroCount}/${audioBuffer.length} non-zero samples (${percentNonZero.toFixed(2)}%), RMS: ${rms.toFixed(6)}, Peak: ${peak.toFixed(6)}`);
+            console.log(`Audio analysis: ${nonZeroCount}/${bufferToEncode.length} non-zero samples (${percentNonZero.toFixed(2)}%), RMS: ${rms.toFixed(6)}, Peak: ${peak.toFixed(6)}`);
             
             if (percentNonZero < 0.1) {
                 console.warn('Warning: Audio appears to be mostly silence - check microphone permissions and input');
             }
             
-            recordedWavBlob = encodeWAV(new Float32Array(audioBuffer), sampleRate);
+            recordedWavBlob = encodeWAV(new Float32Array(bufferToEncode), sampleRate);
             console.log('Encoded WAV blob size:', recordedWavBlob.size, 'bytes');
             audioBuffer = []; // Clear buffer after encoding
         } else {
@@ -739,10 +782,10 @@ export function showReplayButton() {
         setReplayAudio(audio);
         
         audio.onloadedmetadata = () => {
-            // 從錄音截除點之後開始播放，截掉所有提示音（Beat 1, 2, 3）
-            const { beatInterval } = getTimingInfo(state.selectedStructure.start, state.selectedStructure.end);
-            const trimOffset = 2 * beatInterval + 0.25;
-            audio.currentTime = trimOffset;
+            // The count-in (3-beat lead-in) was already trimmed during WAV encoding
+            // in stopMediaRecorder(), so the WAV blob starts at the user's first note.
+            // No need to seek forward during replay.
+            audio.currentTime = 0;
         };
         
         audio.onended = () => {
@@ -903,12 +946,16 @@ export function startPractice() {
         }, 100);
     }, Math.max(0, (recStartDelay + recordingTrimOffset) * 1000));
 
-// 設定練習結束時間（錄音結束後仍繼續錄到練習結束）
+    // 設定練習結束時間（錄音結束後仍繼續錄到練習結束）
      // Resume audio context if suspended
      const audioCtx = getAudioCtx();
      if (audioCtx.state === 'suspended') {
          audioCtx.resume().catch(err => console.error('Failed to resume audio context:', err));
      }
+     
+     // 存儲錄音時間資訊，用於後端音符比對的時間對齉
+     state.recordingTrimOffset = recordingTrimOffset;
+     state.recordingStartTime = selectedStructure.start + firstNoteTime;
      isPracticeActive = true;
     practiceEndTimer = setTimeout(() => {
         cleanupPractice(false).then(() => { // 保留錄音，等待 MediaRecorder onstop 完成
@@ -965,6 +1012,7 @@ export function interruptPractice() {
 /**
  * 分析並提交錄音
  * 錄製結束後自動呼叫此函數進行音訊分析和結果提交
+ * 會執行兩次評估：一次使用母音過濾（/analyze），一次不過濾（/analyze/basic）
  */
 export async function analyzeAndSubmitRecording() {
     try {
@@ -983,34 +1031,50 @@ export async function analyzeAndSubmitRecording() {
             throw new Error('無可用的參考音符進行分析');
         }
         
-// 取得音訊樣本率 (從 AudioContext 取得)
+        // 取得音訊樣本率 (從 AudioContext 取得)
         const audioContext = getAudioCtx();
         const sampleRate = audioContext ? audioContext.sampleRate : 44100;
         
         // Log what we're about to send to the API
         console.log('Sending to API - audio length:', audioBase64.length, 'base64 chars, reference notes:', referenceNotes.length);
         console.log('First reference note sample:', referenceNotes[0]);
+        console.log('Recording start time offset:', state.recordingStartTime);
+        console.log('Recording trim offset:', state.recordingTrimOffset);
         
-        // 呼叫分析 API
-        const analysisResult = await api('/assessments/analyze', {
-            method: 'POST',
-            body: JSON.stringify({
-                audio_data: audioBase64,
-                audio_format: 'wav',
-                reference_notes: referenceNotes
+        // 共用的請求 body
+        const commonBody = {
+            audio_data: audioBase64,
+            audio_format: 'wav',
+            reference_notes: referenceNotes,
+            recording_start_time: state.recordingStartTime
+        };
+        
+        // 同時發送兩個請求：母音過濾 + 基本（無過濾）
+        const [vowelResult, basicResult] = await Promise.allSettled([
+            api('/assessments/analyze', {
+                method: 'POST',
+                body: JSON.stringify(commonBody)
+            }),
+            api('/assessments/analyze/basic', {
+                method: 'POST',
+                body: JSON.stringify(commonBody)
             })
-        });
+        ]);
         
-        // Log the complete analysis result
-        console.log('Analysis API response:', analysisResult);
-        if (analysisResult.note_comparison || analysisResult.NoteComparison) {
-            const nc = analysisResult.note_comparison || analysisResult.NoteComparison;
-            console.log('Note comparison sample (first 3):', nc.slice(0, 3));
-            console.log('Note comparison field names for first item:', Object.keys(nc[0] || {}));
+        // 日誌記錄
+        console.log('Analysis API (vowel-filtered) response:', vowelResult);
+        console.log('Analysis API (basic) response:', basicResult);
+        
+        // 擷取結果（如果請求失敗則為 null）
+        const vowelAssessmentResult = vowelResult.status === 'fulfilled' ? vowelResult.value : null;
+        const basicAssessmentResult = basicResult.status === 'fulfilled' ? basicResult.value : null;
+        
+        if (vowelResult.status === 'rejected' && basicResult.status === 'rejected') {
+            throw new Error('兩種評估都失敗: ' + vowelResult.reason?.message + ' / ' + basicResult.reason?.message);
         }
         
-        // 更新分析結果 UI
-        updateAnalysisResultsUI(analysisResult);
+        // 更新分析結果 UI - 顯示兩種評估結果
+        updateAnalysisResultsUI(vowelAssessmentResult, basicAssessmentResult);
         
         // 可選：自動提交評估結果到歷史記錄
         // 註解掉此部分如果只想顯示分析而不儲存
@@ -1036,7 +1100,7 @@ export async function analyzeAndSubmitRecording() {
         // 更新狀態
         document.getElementById('status-text').textContent = '分析完成';
         
-        return analysisResult;
+        return { vowelAssessmentResult, basicAssessmentResult };
     } catch (error) {
         console.error('分析錄音時發生錯誤:', error);
         document.getElementById('status-text').textContent = '分析失敗: ' + error.message;
@@ -1064,26 +1128,26 @@ export async function analyzeAndSubmitRecording() {
 }
 
 /**
- * 更新分析結果到 UI
- * @param {Object} result - 分析結果物件
+ * 正規化單一評估結果
+ * 處理 snake_case 和 PascalCase 兩種格式的 API 回傳
  */
-function updateAnalysisResultsUI(result) {
-    // 打印完整的 API 回應結果進行診斷
-    console.log('Updating analysis results UI with:', result);
-    
-    // 更新結果面板
-    // Note: API returns snake_case keys (score, total_notes, matched_notes, etc.)
-    const matchedNotes = result.matched_notes ?? result.MatchedNotes ?? 0;
-    const totalNotes = result.total_notes ?? result.TotalNotes ?? 0;
-    const avgPitchDev = result.average_pitch_deviation ?? result.AveragePitchDeviation ?? 0;
-    const avgDurationDev = result.average_duration_deviation ?? result.AverageDurationDeviation ?? 0;
-    const score = result.score ?? result.Score ?? 0;
-    const noteComparison = result.note_comparison ?? result.NoteComparison ?? [];
-    
-    console.log('Normalized values - Score:', score, 'Matched:', matchedNotes + '/' + totalNotes, 'NoteComparison length:', noteComparison.length);
-    
-    // Normalize note comparison fields to PascalCase for UI functions
-    const normalizedNoteComparison = noteComparison.map(note => {
+function normalizeResult(result) {
+    if (!result) return null;
+    return {
+        score: result.score ?? result.Score ?? 0,
+        totalNotes: result.total_notes ?? result.TotalNotes ?? 0,
+        matchedNotes: result.matched_notes ?? result.MatchedNotes ?? 0,
+        avgPitchDev: result.average_pitch_deviation ?? result.AveragePitchDeviation ?? 0,
+        avgDurationDev: result.average_duration_deviation ?? result.AverageDurationDeviation ?? 0,
+        noteComparison: result.note_comparison ?? result.NoteComparison ?? []
+    };
+}
+
+/**
+ * 正規化音符比對資料
+ */
+function normalizeNoteComparison(noteComparison) {
+    return noteComparison.map(note => {
         const matchStatus = note.match_status ?? note.MatchStatus ?? 'unknown';
         return {
             RefPitch: note.ref_pitch ?? note.RefPitch ?? 0,
@@ -1094,10 +1158,34 @@ function updateAnalysisResultsUI(result) {
             DurationDeviationSec: note.duration_deviation_sec ?? note.DurationDeviationSec ?? 0
         };
     });
+}
+
+/**
+ * 更新分析結果到 UI
+ * 顯示兩種評估結果：母音過濾 vs 基本（無過濾）
+ * @param {Object|null} vowelResult - 母音過濾評估結果
+ * @param {Object|null} basicResult - 基本評估結果（無母音過濾）
+ */
+function updateAnalysisResultsUI(vowelResult, basicResult) {
+    // 打印完整的 API 回應結果進行診斷
+    console.log('Updating analysis results UI with:', { vowelResult, basicResult });
     
-    document.getElementById('result-matched').textContent = `${matchedNotes}/${totalNotes}`;
-    document.getElementById('result-pitch').textContent = avgPitchDev.toFixed(1);
-    document.getElementById('result-duration').textContent = avgDurationDev.toFixed(3);
+    // 正規化兩種結果
+    const vowelNorm = normalizeResult(vowelResult);
+    const basicNorm = normalizeResult(basicResult);
+    
+    // 優先使用母音過濾結果作為主顯示
+    const primary = vowelNorm || basicNorm;
+    if (!primary) return;
+    
+    const matchedNotes = primary.matchedNotes;
+    const totalNotes = primary.totalNotes;
+    const avgPitchDev = primary.avgPitchDev;
+    const avgDurationDev = primary.avgDurationDev;
+    const score = primary.score;
+    const normalizedNoteComparison = normalizeNoteComparison(primary.noteComparison);
+    
+    console.log('Normalized values - Score:', score, 'Matched:', matchedNotes + '/' + totalNotes, 'NoteComparison length:', normalizedNoteComparison.length);
     
     // 更新圖表區域顯示視覺化
     const chartArea = document.getElementById('chart-area');
@@ -1129,39 +1217,92 @@ function updateAnalysisResultsUI(result) {
         }
     });
     
-    // 更新詳細結果面板
+    // 更新詳細結果面板 - 顯示兩種評估結果
     const resultsPanel = document.getElementById('results-panel');
     if (resultsPanel) {
         resultsPanel.innerHTML = `
-            <div class="results-grid">
-                <div class="result-stat">
-                    <div class="result-stat-value" id="result-matched">${matchedNotes}/${totalNotes}</div>
-                    <div class="result-stat-label">音符匹配</div>
+            <div class="assessment-comparison">
+                <h3 style="color:#fff;margin:0 0 12px 0;font-size:16px;">練習評估結果</h3>
+                <div class="results-grid-two">
+                    ${renderAssessmentCard(vowelNorm, '母音過濾', normalizedNoteComparison)}
+                    ${renderAssessmentCard(basicNorm, '基本比對', basicNorm ? normalizeNoteComparison(basicNorm.noteComparison) : [])}
                 </div>
-                <div class="result-stat">
-                    <div class="result-stat-value" id="result-pitch">${avgPitchDev.toFixed(1)}</div>
-                    <div class="result-stat-label">平均音高偏差</div>
-                </div>
-                <div class="result-stat">
-                    <div class="result-stat-value" id="result-duration">${avgDurationDev.toFixed(3)}</div>
-                    <div class="result-stat-label">平均時長偏差</div>
-            </div>
-            </div>
-            <div class="detailed-results">
-                <h3>詳細音符比對</h3>
-                <div id="note-table-container"></div>
             </div>
         `;
         resultsPanel.classList.add('visible');
         
-        // 繪製音符比對表格
-        if (normalizedNoteComparison.length > 0) {
+        // 繪製母音過濾版本的音符比對表格
+        if (vowelNorm && vowelNorm.noteComparison.length > 0) {
             import('./practice-ui.js').then(ui => {
-                const noteTableContainer = document.getElementById('note-table-container');
-                if (noteTableContainer) {
-                    ui.drawNoteComparisonTable(normalizedNoteComparison, noteTableContainer);
+                const vowelTable = document.getElementById('note-table-vowel');
+                if (vowelTable) {
+                    ui.drawNoteComparisonTable(normalizedNoteComparison, vowelTable);
+                }
+                const basicTable = document.getElementById('note-table-basic');
+                if (basicTable && basicNorm && basicNorm.noteComparison.length > 0) {
+                    const basicNormalized = normalizeNoteComparison(basicNorm.noteComparison);
+                    ui.drawNoteComparisonTable(basicNormalized, basicTable);
+                }
+            });
+        } else if (basicNorm && basicNorm.noteComparison.length > 0) {
+            import('./practice-ui.js').then(ui => {
+                const basicTable = document.getElementById('note-table-basic');
+                if (basicTable) {
+                    const basicNormalized = normalizeNoteComparison(basicNorm.noteComparison);
+                    ui.drawNoteComparisonTable(basicNormalized, basicTable);
                 }
             });
         }
     }
+}
+
+/**
+ * 渲染單張評估卡片
+ */
+function renderAssessmentCard(norm, label, normalizedNoteComparison) {
+    if (!norm) {
+        return `
+            <div class="result-card">
+                <div class="result-card-header">
+                    <span class="result-card-title">${label}</span>
+                    <span class="result-card-status failed">失敗</span>
+                </div>
+                <div class="result-card-body">
+                    <div class="result-stat-value">錯誤</div>
+                    <div class="result-stat-label">計算失敗</div>
+                </div>
+            </div>
+        `;
+    }
+    
+    return `
+        <div class="result-card">
+            <div class="result-card-header">
+                <span class="result-card-title">${label}</span>
+                <span class="result-card-status success">完成</span>
+            </div>
+            <div class="result-card-grid">
+                <div class="result-stat">
+                    <div class="result-stat-value">${norm.matchedNotes}/${norm.totalNotes}</div>
+                    <div class="result-stat-label">音符匹配</div>
+                </div>
+                <div class="result-stat">
+                    <div class="result-stat-value">${norm.avgPitchDev.toFixed(1)}</div>
+                    <div class="result-stat-label">平均音高偏差</div>
+                </div>
+                <div class="result-stat">
+                    <div class="result-stat-value">${norm.avgDurationDev.toFixed(3)}</div>
+                    <div class="result-stat-label">平均時長偏差</div>
+                </div>
+                <div class="result-stat">
+                    <div class="result-stat-value">${norm.score}</div>
+                    <div class="result-stat-label">分數</div>
+                </div>
+            </div>
+            <div class="result-card-table">
+                <h4>音符比對</h4>
+                <div id="note-table-${label === '母音過濾' ? 'vowel' : 'basic'}"></div>
+            </div>
+        </div>
+    `;
 }

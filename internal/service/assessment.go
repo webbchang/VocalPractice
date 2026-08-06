@@ -10,17 +10,19 @@ import (
 
 // MIDINoteForAssessment is a local type for assessment processing
 type MIDINoteForAssessment struct {
-	Pitch     int
-	StartTime float64
-	EndTime   float64
+	Pitch      int
+	PitchFloat float64 // Float MIDI value for sub-semitone pitch deviation calculation
+	StartTime  float64
+	EndTime    float64
 }
 
 // MergedNoteForAssessment groups consecutive same-pitch notes
 type MergedNoteForAssessment struct {
-	Pitch     int
-	StartTime float64
-	EndTime   float64
-	EventIdx  []int
+	Pitch      int
+	PitchFloat float64
+	StartTime  float64
+	EndTime    float64
+	EventIdx   []int
 }
 
 // AssessmentResultForAssessment is the result of pitch assessment
@@ -37,10 +39,19 @@ type AssessmentResultForAssessment struct {
 
 // AssessRecordingWithVowelFiltering performs pitch assessment on user's recording
 // but only analyzes vowel portions of the detected notes (ignoring consonants)
+// recordingStartTime is the absolute MIDI time corresponding to the start of the
+// (count-in-trimmed) recording. It is added to detected note times so they align
+// with the absolute-timestamp reference notes on the backend.
+//
+// Pitch deviation is measured in cents, where 100 cents = 1 semitone.
+// A deviation of 0 means the user sang the exact reference pitch.
+// Positive values mean the user sang sharp; negative values mean flat.
+// (mg.PitchFloat - det.PitchFloat) * 100 gives the deviation in cents.
 func AssessRecordingWithVowelFiltering(
 	samples []float64,
 	sampleRate int,
 	referenceNotes []domain.MIDINote,
+	recordingStartTime float64,
 ) (*AssessmentResultForAssessment, error) {
 	if len(referenceNotes) == 0 {
 		return &AssessmentResultForAssessment{
@@ -54,9 +65,10 @@ func AssessRecordingWithVowelFiltering(
 	refNotes := make([]MIDINoteForAssessment, len(referenceNotes))
 	for i, n := range referenceNotes {
 		refNotes[i] = MIDINoteForAssessment{
-			Pitch:     n.Pitch,
-			StartTime: n.StartTime,
-			EndTime:   n.EndTime,
+			Pitch:      n.Pitch,
+			PitchFloat: float64(n.Pitch), // Reference notes come from MIDI — integer pitches
+			StartTime:  n.StartTime,
+			EndTime:    n.EndTime,
 		}
 	}
 
@@ -65,7 +77,7 @@ func AssessRecordingWithVowelFiltering(
 	fmt.Printf("[DEBUG] Pitch detection: %d notes detected from %d samples (sampleRate=%d)\n", len(allDetectedNotes), len(samples), sampleRate)
 	for i, n := range allDetectedNotes {
 		if i < 10 {
-			fmt.Printf("[DEBUG]   Detected note %d: Pitch=%d, Start=%.3f, End=%.3f\n", i, n.Pitch, n.StartTime, n.EndTime)
+			fmt.Printf("[DEBUG]   Detected note %d: Pitch=%d, PitchFloat=%.2f, Start=%.3f, End=%.3f\n", i, n.Pitch, n.PitchFloat, n.StartTime, n.EndTime)
 		}
 	}
 
@@ -78,17 +90,21 @@ func AssessRecordingWithVowelFiltering(
 	fmt.Printf("[DEBUG] After vowel filtering: %d vowel notes remaining (from %d detected)\n", len(vowelNotes), len(allDetectedNotes))
 	for i, n := range vowelNotes {
 		if i < 10 {
-			fmt.Printf("[DEBUG]   Vowel note %d: Pitch=%d, Start=%.3f, End=%.3f\n", i, n.Pitch, n.StartTime, n.EndTime)
+			fmt.Printf("[DEBUG]   Vowel note %d: Pitch=%d, PitchFloat=%.2f, Start=%.3f, End=%.3f\n", i, n.Pitch, n.PitchFloat, n.StartTime, n.EndTime)
 		}
 	}
 
-	// Convert vowel notes to MIDINoteForAssessment
+	// Convert vowel notes to MIDINoteForAssessment and shift to absolute MIDI time
+	// by adding the recordingStartTime offset. This aligns detected note timing
+	// (relative to recording start, after count-in trim) with reference note
+	// timing (absolute from MIDI start).
 	vowelNotesForAssessment := make([]MIDINoteForAssessment, len(vowelNotes))
 	for i, n := range vowelNotes {
 		vowelNotesForAssessment[i] = MIDINoteForAssessment{
-			Pitch:     n.Pitch,
-			StartTime: n.StartTime,
-			EndTime:   n.EndTime,
+			Pitch:      n.Pitch,
+			PitchFloat: n.PitchFloat,
+			StartTime:  n.StartTime + recordingStartTime,
+			EndTime:    n.EndTime + recordingStartTime,
 		}
 	}
 
@@ -102,10 +118,14 @@ func AssessRecordingWithVowelFiltering(
 }
 
 // AssessRecording performs pitch assessment on user's recording (original method without vowel filtering)
+// recordingStartTime is the absolute MIDI time corresponding to the start of the
+// (count-in-trimmed) recording. It is added to detected note times to align
+// them with absolute-timestamp reference notes.
 func AssessRecording(
 	samples []float64,
 	sampleRate int,
 	referenceNotes []domain.MIDINote,
+	recordingStartTime float64,
 ) (*AssessmentResultForAssessment, error) {
 	if len(referenceNotes) == 0 {
 		return &AssessmentResultForAssessment{
@@ -119,22 +139,24 @@ func AssessRecording(
 	refNotes := make([]MIDINoteForAssessment, len(referenceNotes))
 	for i, n := range referenceNotes {
 		refNotes[i] = MIDINoteForAssessment{
-			Pitch:     n.Pitch,
-			StartTime: n.StartTime,
-			EndTime:   n.EndTime,
+			Pitch:      n.Pitch,
+			PitchFloat: float64(n.Pitch), // Reference notes come from MIDI — integer pitches
+			StartTime:  n.StartTime,
+			EndTime:    n.EndTime,
 		}
 	}
 
 	// Step 1: Detect all pitches from the recording
 	allDetectedNotes := detectPitchGo(samples, sampleRate)
 
-	// Convert detected notes to MIDINoteForAssessment
+	// Convert detected notes to MIDINoteForAssessment and shift to absolute MIDI time
 	detectedNotes := make([]MIDINoteForAssessment, len(allDetectedNotes))
 	for i, n := range allDetectedNotes {
 		detectedNotes[i] = MIDINoteForAssessment{
-			Pitch:     n.Pitch,
-			StartTime: n.StartTime,
-			EndTime:   n.EndTime,
+			Pitch:      n.Pitch,
+			PitchFloat: n.PitchFloat,
+			StartTime:  n.StartTime + recordingStartTime,
+			EndTime:    n.EndTime + recordingStartTime,
 		}
 	}
 
@@ -171,10 +193,11 @@ func mergeSamePitchNotesForAssessment(notes []MIDINoteForAssessment) []MergedNot
 
 	var merged []MergedNoteForAssessment
 	current := MergedNoteForAssessment{
-		Pitch:     sorted[0].Pitch,
-		StartTime: sorted[0].StartTime,
-		EndTime:   sorted[0].EndTime,
-		EventIdx:  []int{sortedToOrig[0]},
+		Pitch:      sorted[0].Pitch,
+		PitchFloat: sorted[0].PitchFloat,
+		StartTime:  sorted[0].StartTime,
+		EndTime:    sorted[0].EndTime,
+		EventIdx:   []int{sortedToOrig[0]},
 	}
 
 	gapThreshold := 0.05
@@ -186,14 +209,18 @@ func mergeSamePitchNotesForAssessment(notes []MIDINoteForAssessment) []MergedNot
 			if n.EndTime > current.EndTime {
 				current.EndTime = n.EndTime
 			}
+			// Weighted average of float pitch for merged notes
+			totalWeight := float64(len(current.EventIdx))
+			current.PitchFloat = (current.PitchFloat*totalWeight + n.PitchFloat) / (totalWeight + 1)
 			current.EventIdx = append(current.EventIdx, sortedToOrig[i])
 		} else {
 			merged = append(merged, current)
 			current = MergedNoteForAssessment{
-				Pitch:     n.Pitch,
-				StartTime: n.StartTime,
-				EndTime:   n.EndTime,
-				EventIdx:  []int{sortedToOrig[i]},
+				Pitch:      n.Pitch,
+				PitchFloat: n.PitchFloat,
+				StartTime:  n.StartTime,
+				EndTime:    n.EndTime,
+				EventIdx:   []int{sortedToOrig[i]},
 			}
 		}
 	}
@@ -269,7 +296,9 @@ func compareMergedNotesForAssessment(
 			det := detSorted[bestIdx]
 
 			detLen := det.EndTime - det.StartTime
-			pitchDev := float64(mg.Pitch-det.Pitch) * 100.0
+			// Calculate pitch deviation in cents using float MIDI values
+			// This captures sub-semitone deviations that integer comparison misses
+			pitchDev := (mg.PitchFloat - det.PitchFloat) * 100.0
 			durDev := mgLen - detLen
 
 			for _, eidx := range mg.EventIdx {

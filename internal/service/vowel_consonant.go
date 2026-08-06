@@ -7,10 +7,11 @@ import (
 
 // VowelSegment represents a detected vowel segment in the audio
 type VowelSegment struct {
-	StartTime float64
-	EndTime   float64
-	Pitch     int
-	Energy    float64
+	StartTime  float64
+	EndTime    float64
+	Pitch      int
+	PitchFloat float64 // Float MIDI value for sub-semitone pitch deviation
+	Energy     float64
 }
 
 // VowelConsonantSeparator handles separation of vowels and consonants in audio
@@ -77,10 +78,11 @@ func (v *VowelConsonantSeparator) SeparateVowelsConsonants(
 			if vowelEnd-vowelStart > 0.05 { // At least 50ms
 				energy := v.calculateEnergy(noteSamples)
 				vowelSegments = append(vowelSegments, VowelSegment{
-					StartTime: vowelStart,
-					EndTime:   vowelEnd,
-					Pitch:     note.Pitch,
-					Energy:    energy,
+					StartTime:  vowelStart,
+					EndTime:    vowelEnd,
+					Pitch:      note.Pitch,
+					PitchFloat: note.PitchFloat,
+					Energy:     energy,
 				})
 			}
 		}
@@ -325,9 +327,10 @@ func (v *VowelConsonantSeparator) ConvertToMIDINotes(segments []VowelSegment) []
 	notes := make([]MIDINoteForTest, len(segments))
 	for i, seg := range segments {
 		notes[i] = MIDINoteForTest{
-			Pitch:     seg.Pitch,
-			StartTime: seg.StartTime,
-			EndTime:   seg.EndTime,
+			Pitch:      seg.Pitch,
+			PitchFloat: seg.PitchFloat,
+			StartTime:  seg.StartTime,
+			EndTime:    seg.EndTime,
 		}
 	}
 	return notes

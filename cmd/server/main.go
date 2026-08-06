@@ -164,6 +164,7 @@ func main() {
 
 		r.Post("/assessments/submit", userAssessmentsHandler.Submit)
 		r.Post("/assessments/analyze", userAssessmentsHandler.AnalyzeRecording)
+		r.Post("/assessments/analyze/basic", userAssessmentsHandler.AnalyzeRecordingWithoutFiltering)
 		r.Get("/assessments", userAssessmentsHandler.ListMyAssessments)
 		r.Get("/assessments/stats", userAssessmentsHandler.GetStats)
 		r.Get("/assessments/{assessment_id}", userAssessmentsHandler.GetAssessment)

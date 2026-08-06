@@ -22,6 +22,10 @@ const state = {
     // 扁平化選取模式（段落+句子混合連續多選）
     flatItems: [],           // [{ type: 'section'|'phrase', data: originalObj, section: parentSection }, ...]
     selectionRange: { from: null, to: null }, // flatItems 的 index 範圍
+
+    // Recording timing metadata for note alignment
+    recordingStartTime: 0,     // absolute MIDI time corresponding to recording time 0 (after count-in trim)
+    recordingTrimOffset: 0,    // count-in duration in seconds to trim from the recording
 };
 
 export default state;

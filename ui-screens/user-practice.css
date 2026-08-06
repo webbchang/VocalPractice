@@ -430,6 +430,160 @@
             margin-top: 4px;
         }
 
+        .explain-link {
+            display: inline-block;
+            margin-left: 6px;
+            font-size: 11px;
+            color: #ffc107;
+            text-decoration: none;
+            font-weight: normal;
+            vertical-align: middle;
+        }
+
+        .explain-link:hover {
+            color: #ffdd59;
+            text-decoration: underline;
+        }
+
+        /* Explain dialog */
+        .explain-dialog-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .explain-dialog {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 480px;
+            width: 90%;
+            border: 1px solid #333;
+        }
+
+        .explain-dialog-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .explain-dialog-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .explain-dialog-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #888;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        }
+
+        .explain-dialog-close:hover {
+            color: #fff;
+        }
+
+        .explain-dialog-body p {
+            color: #ddd;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 0 0 12px 0;
+        }
+
+        .explain-dialog-body ul {
+            color: #ddd;
+            font-size: 14px;
+            line-height: 1.8;
+            padding-left: 20px;
+            margin: 0 0 12px 0;
+        }
+
+        /* Dual assessment card comparison */
+        .assessment-comparison h3 {
+            font-size: 16px;
+            color: #fff;
+        }
+
+        .results-grid-two {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+
+        .result-card {
+            background: #1a1a2e;
+            border-radius: 12px;
+            padding: 16px;
+            border: 2px solid #333;
+        }
+
+        .result-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .result-card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .result-card-status {
+            font-size: 12px;
+            font-weight: 600;
+            padding: 4px 10px;
+            border-radius: 6px;
+        }
+
+        .result-card-status.success {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4CAF50;
+        }
+
+        .result-card-status.failed {
+            background: rgba(244, 67, 54, 0.2);
+            color: #F44336;
+        }
+
+        .result-card-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .result-card .result-stat {
+            background: #0f0f23;
+            padding: 12px 8px;
+        }
+
+        .result-card .result-stat-value {
+            font-size: 20px;
+        }
+
+        .result-card-table {
+            margin-top: 12px;
+        }
+
+        .result-card-table h4 {
+            font-size: 12px;
+            color: #888;
+            margin: 0 0 6px 0;
+        }
+
         .no-structures {
             text-align: center;
             padding: 30px;

@@ -97,7 +97,10 @@
                         <div class="result-stat-label">音符匹配</div>
                     </div>
                     <div class="result-stat">
-                        <div class="result-stat-value" id="result-pitch">-</div>
+                        <div class="result-stat-value">
+                            <span id="result-pitch">-</span>
+                            <a href="#" class="explain-link" onclick="window.showPitchDeviationExplain(event)">⚠</a>
+                        </div>
                         <div class="result-stat-label">平均音高偏差</div>
                     </div>
                     <div class="result-stat">
@@ -208,6 +211,37 @@ window.analyzeAndSubmitRecording = analyzeAndSubmitRecording;
 
         // --- 初始化 ---
         loadSongs();
+    </script>
+
+    <!-- 音高偏差說明對話框 -->
+    <div class="explain-dialog-overlay" id="explain-dialog-overlay" style="display:none;">
+        <div class="explain-dialog">
+            <div class="explain-dialog-header">
+                <span class="explain-dialog-title">音高偏差說明 (Pitch Deviation)</span>
+                <button class="explain-dialog-close" onclick="window.hidePitchDeviationExplain()">&times;</button>
+            </div>
+            <div class="explain-dialog-body">
+                <p>音高偏差以 <strong>cent</strong> 為單位。100 cent = 1 半音 (semitone)。例如： C4 到 C#4 之間的距雌是 100 cent。</p>
+                <ul>
+                    <li><strong>0 cent</strong> = 完美音準（你的音準跟參考音符完全一致）</li>
+                    <li><strong>正值 (例: +20)</strong> = 你的音高too 高（sharp）</li>
+                    <li><strong>負值 (例: -15)</strong> = 你的音高too 低（flat）</li>
+                    <li><strong>±50 cent 以下</strong> = 非常接近，聽起來幾乎無差異</li>
+                    <li><strong>±100 cent</strong> = 你唱到了鄰近的半音（一個不同的音符）</li>
+                </ul>
+                <p style="color:#888;font-size:13px;">分數計算：pitchScore = max(0, 100 - |平均音高偏差| * 0.5)，權重 70%。</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.showPitchDeviationExplain = function(e) {
+            e.preventDefault();
+            document.getElementById('explain-dialog-overlay').style.display = 'block';
+        };
+        window.hidePitchDeviationExplain = function() {
+            document.getElementById('explain-dialog-overlay').style.display = 'none';
+        };
     </script>
 </body>
 </html>

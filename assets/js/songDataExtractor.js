@@ -14,7 +14,7 @@ function extractReferenceNotes(allNotes, selectedTrackIndex, rangeStart, rangeEn
         pitch: n.pitch,
         start_time: n.start,
         end_time: n.start + Math.min(n.dur, safeRangeEnd - n.start),
-    })).filter(n => (n.end_time - n.start_time) > 0.02;
+    })).filter(n => (n.end_time - n.start_time) > 0.02);
 }
 
 window.SongDataExtractor = {

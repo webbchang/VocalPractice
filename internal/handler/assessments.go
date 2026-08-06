@@ -45,9 +45,10 @@ type submitAssessmentRequest struct {
 }
 
 type analyzeRequest struct {
-	AudioData      string            `json:"audio_data"`
-	AudioFormat    string            `json:"audio_format,omitempty"`
-	ReferenceNotes []domain.MIDINote `json:"reference_notes"`
+	AudioData           string            `json:"audio_data"`
+	AudioFormat         string            `json:"audio_format,omitempty"`
+	ReferenceNotes      []domain.MIDINote `json:"reference_notes"`
+	RecordingStartTime  float64           `json:"recording_start_time,omitempty"`
 }
 
 func (h *UserAssessmentsHandler) Submit(w http.ResponseWriter, r *http.Request) {
@@ -164,7 +165,51 @@ func (h *UserAssessmentsHandler) AnalyzeRecording(w http.ResponseWriter, r *http
 			len(samples), sampleRate, float64(len(samples))/float64(sampleRate), rms, maxVal)
 	}
 
-	result, err := service.AssessRecordingWithVowelFiltering(samples, sampleRate, req.ReferenceNotes)
+	fmt.Printf("[DEBUG] Analyze request: referenceNotes=%d, recordingStartTime=%.3f, audioBytes=%d\n",
+		len(req.ReferenceNotes), req.RecordingStartTime, len(audioBytes))
+	result, err := service.AssessRecordingWithVowelFiltering(samples, sampleRate, req.ReferenceNotes, req.RecordingStartTime)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "assessment failed: "+err.Error())
+		return
+	}
+
+	respondJSON(w, http.StatusOK, result)
+}
+
+// AnalyzeRecordingWithoutFiltering handles audio analysis without vowel filtering.
+// It calls service.AssessRecording directly, comparing all detected notes against
+// the reference without separating vowels from consonants.
+func (h *UserAssessmentsHandler) AnalyzeRecordingWithoutFiltering(w http.ResponseWriter, r *http.Request) {
+	_, ok := r.Context().Value(UserIDKey).(uuid.UUID)
+	if !ok {
+		respondError(w, http.StatusUnauthorized, "user not authenticated")
+		return
+	}
+
+	var req analyzeRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.AudioData == "" {
+		respondError(w, http.StatusBadRequest, "audio_data is required")
+		return
+	}
+
+	audioBytes, err := base64.StdEncoding.DecodeString(req.AudioData)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid audio data (base64 decode failed)")
+		return
+	}
+
+	samples, sampleRate, err := service.DecodeAudioData(audioBytes, req.AudioFormat)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "audio decode failed: "+err.Error())
+		return
+	}
+
+	result, err := service.AssessRecording(samples, sampleRate, req.ReferenceNotes, req.RecordingStartTime)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "assessment failed: "+err.Error())
 		return
