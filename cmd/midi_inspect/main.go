@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"sort"
 
 	"vocal-practice-app/internal/domain"
@@ -41,18 +40,22 @@ type clientNoteWithTrack struct {
 }
 
 func main() {
-	midiPath := filepath.Join("test_data", "reference2.MID")
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: midi_inspect <midi-file-path>")
+		os.Exit(1)
+	}
+	midiPath := os.Args[1]
 
 	raw, err := os.ReadFile(midiPath)
 	if err != nil {
-		panic(err)
+		panic(fmt.Sprintf("Failed to read MIDI file: %v", err))
 	}
 
 	// ========================================================
 	// 1) Server-side parser (tempo-aware)
 	// ========================================================
 	parser := service.NewMIDIParser()
-	song, err := parser.Parse(raw, "reference2", "")
+	song, err := parser.Parse(raw, "utongflower", "")
 	if err != nil {
 		panic(fmt.Sprintf("Server parse error: %v", err))
 	}
