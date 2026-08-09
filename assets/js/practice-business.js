@@ -317,9 +317,24 @@ export function clearSelection() {
     document.getElementById('range-actions').style.display = 'none';
     document.getElementById('current-range-label').textContent = '未選擇';
     // 隱藏結果面板
-    const resultsPanel = document.getElementById('results-panel');
+    const resultsPanel = document.getElementById('results-panel-foldable');
     if (resultsPanel) {
         resultsPanel.classList.remove('visible');
+        resultsPanel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('results-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+        const body = document.getElementById('results-panel-body');
+        if (body) body.innerHTML = '';
+    }
+    // 隱藏音高準度折疊面板
+    const pitchPanel = document.getElementById('pitch-panel');
+    if (pitchPanel) {
+        pitchPanel.classList.remove('visible');
+        pitchPanel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('pitch-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+        const pitchChart = document.getElementById('pitch-chart');
+        if (pitchChart) pitchChart.innerHTML = '';
     }
     import('./practice-ui.js').then(m => {
         m.renderStructureList();
@@ -344,9 +359,24 @@ export async function onSongChange() {
         document.getElementById('vocal-tracks').innerHTML = '<div class="no-structures">請先選擇歌曲</div>';
         document.getElementById('structure-list').innerHTML = '<div class="no-structures">請先選擇歌曲</div>';
         // 隱藏結果面板
-        const resultsPanel = document.getElementById('results-panel');
+        const resultsPanel = document.getElementById('results-panel-foldable');
         if (resultsPanel) {
             resultsPanel.classList.remove('visible');
+            resultsPanel.setAttribute('data-folded', 'true');
+            const icon = document.getElementById('results-panel-toggle-icon');
+            if (icon) icon.textContent = '▼';
+            const body = document.getElementById('results-panel-body');
+            if (body) body.innerHTML = '';
+        }
+        // 隱藏音高準度折疊面板
+        const pitchPanel = document.getElementById('pitch-panel');
+        if (pitchPanel) {
+            pitchPanel.classList.remove('visible');
+            pitchPanel.setAttribute('data-folded', 'true');
+            const icon = document.getElementById('pitch-panel-toggle-icon');
+            if (icon) icon.textContent = '▼';
+            const pitchChart = document.getElementById('pitch-chart');
+            if (pitchChart) pitchChart.innerHTML = '';
         }
         return;
     }
@@ -914,9 +944,24 @@ export function startPractice() {
     // 清除之前的練習狀態
     cleanupPractice(true);
     // 隱藏之前的結果面板
-    const resultsPanel = document.getElementById('results-panel');
+    const resultsPanel = document.getElementById('results-panel-foldable');
     if (resultsPanel) {
         resultsPanel.classList.remove('visible');
+        resultsPanel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('results-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+        const body = document.getElementById('results-panel-body');
+        if (body) body.innerHTML = '';
+    }
+    // 隱藏音高準度折疊面板
+    const pitchPanel = document.getElementById('pitch-panel');
+    if (pitchPanel) {
+        pitchPanel.classList.remove('visible');
+        pitchPanel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('pitch-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+        const pitchChart = document.getElementById('pitch-chart');
+        if (pitchChart) pitchChart.innerHTML = '';
     }
 
     // 計算練習時間參數（與 playRangeWithBeats 一致）
@@ -992,9 +1037,24 @@ export function interruptPractice() {
     stopAudioProcess(AudioProcess.PRACTICE_PLAYBACK);
     stopAudioProcess(AudioProcess.RECORDING_REPLAY);
     // 隱藏結果面板
-    const resultsPanel = document.getElementById('results-panel');
+    const resultsPanel = document.getElementById('results-panel-foldable');
     if (resultsPanel) {
         resultsPanel.classList.remove('visible');
+        resultsPanel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('results-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+        const body = document.getElementById('results-panel-body');
+        if (body) body.innerHTML = '';
+    }
+    // 隱藏音高準度折疊面板
+    const pitchPanel = document.getElementById('pitch-panel');
+    if (pitchPanel) {
+        pitchPanel.classList.remove('visible');
+        pitchPanel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('pitch-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+        const pitchChart = document.getElementById('pitch-chart');
+        if (pitchChart) pitchChart.innerHTML = '';
     }
     document.getElementById('status-text').textContent = '準備就緒';
     document.getElementById('chart-area').innerHTML = `
@@ -1187,7 +1247,7 @@ function updateAnalysisResultsUI(vowelResult, basicResult) {
     
     console.log('Normalized values - Score:', score, 'Matched:', matchedNotes + '/' + totalNotes, 'NoteComparison length:', normalizedNoteComparison.length);
     
-    // 更新圖表區域顯示視覺化
+    // 更新圖表區域顯示分數儀表（僅分數，音高準度移至獨立折疊面板）
     const chartArea = document.getElementById('chart-area');
     chartArea.innerHTML = `
         <div class="viz-container">
@@ -1195,41 +1255,62 @@ function updateAnalysisResultsUI(vowelResult, basicResult) {
                 <div class="viz-title">分數</div>
                 <div id="score-gauge"></div>
             </div>
-            <div class="viz-pitch">
-                <div class="viz-title">音高準度</div>
-                <div id="pitch-chart"></div>
-            </div>
         </div>
     `;
     
-    // 繪製視覺化
+    // 展開音高準度面板（位於分數面板之下，水平滾動）
+    const pitchPanel = document.getElementById('pitch-panel');
+    if (pitchPanel) {
+        pitchPanel.classList.add('visible');
+        pitchPanel.setAttribute('data-folded', 'false');
+        const toggleIcon = document.getElementById('pitch-panel-toggle-icon');
+        if (toggleIcon) toggleIcon.textContent = '▲';
+    }
+    
+    // 繪製分數儀表與音高偏差圖表
     import('./practice-ui.js').then(ui => {
-        // 繪製分數儀表
         const scoreGaugeContainer = document.getElementById('score-gauge');
         if (scoreGaugeContainer) {
             ui.drawScoreGauge(score, scoreGaugeContainer);
         }
-        
-        // 繪製音高偏差圖表
         const pitchChartContainer = document.getElementById('pitch-chart');
         if (pitchChartContainer && normalizedNoteComparison.length > 0) {
             ui.drawPitchDeviationChart(normalizedNoteComparison, pitchChartContainer);
+        } else if (pitchChartContainer) {
+            pitchChartContainer.innerHTML = '<div class="pitch-placeholder">無音符資料</div>';
         }
     });
     
     // 更新詳細結果面板 - 顯示兩種評估結果
-    const resultsPanel = document.getElementById('results-panel');
+    const resultsPanel = document.getElementById('results-panel-foldable');
     if (resultsPanel) {
-        resultsPanel.innerHTML = `
-            <div class="assessment-comparison">
-                <h3 style="color:#fff;margin:0 0 12px 0;font-size:16px;">練習評估結果</h3>
-                <div class="results-grid-two">
-                    ${renderAssessmentCard(vowelNorm, '母音過濾', normalizedNoteComparison)}
-                    ${renderAssessmentCard(basicNorm, '基本比對', basicNorm ? normalizeNoteComparison(basicNorm.noteComparison) : [])}
-                </div>
-            </div>
-        `;
+        // 更新摘要數據
+        const matchedEl = document.getElementById('result-matched');
+        if (matchedEl) matchedEl.textContent = `${matchedNotes}/${totalNotes}`;
+        const pitchEl = document.getElementById('result-pitch');
+        if (pitchEl) pitchEl.textContent = avgPitchDev.toFixed(1);
+        const durationEl = document.getElementById('result-duration');
+        if (durationEl) durationEl.textContent = avgDurationDev.toFixed(3);
+        
+        // 展開面板
         resultsPanel.classList.add('visible');
+        resultsPanel.setAttribute('data-folded', 'false');
+        const toggleIcon = document.getElementById('results-panel-toggle-icon');
+        if (toggleIcon) toggleIcon.textContent = '▲';
+        
+        // 渲染評估卡片到內容區
+        const body = document.getElementById('results-panel-body');
+        if (body) {
+            body.innerHTML = `
+                <div class="assessment-comparison">
+                    <h3 style="color:#fff;margin:0 0 12px 0;font-size:16px;">練習評估結果</h3>
+                    <div class="results-grid-two">
+                        ${renderAssessmentCard(vowelNorm, '母音過濾', normalizedNoteComparison)}
+                        ${renderAssessmentCard(basicNorm, '基本比對', basicNorm ? normalizeNoteComparison(basicNorm.noteComparison) : [])}
+                    </div>
+                </div>
+            `;
+        }
         
         // 繪製母音過濾版本的音符比對表格
         if (vowelNorm && vowelNorm.noteComparison.length > 0) {

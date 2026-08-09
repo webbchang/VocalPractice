@@ -90,22 +90,41 @@
                 </div>
             </div>
 
-            <div class="results-panel" id="results-panel">
-                <div class="results-grid">
-                    <div class="result-stat">
-                        <div class="result-stat-value" id="result-matched">-/-</div>
-                        <div class="result-stat-label">音符匹配</div>
-                    </div>
-                    <div class="result-stat">
-                        <div class="result-stat-value">
+            <!-- 練習評估結果折疊面板 -->
+            <div class="results-panel-foldable" id="results-panel-foldable" data-folded="true">
+                <div class="results-panel-header" id="results-panel-header" onclick="window.toggleResultsPanel()">
+                    <span class="results-panel-title">📊 練習評估結果</span>
+                    <div class="results-summary">
+                        <span class="result-stat-value" id="result-matched">-/-</span>
+                        <span class="result-stat-label">音符匹配</span>
+                        <span class="result-stat-value">
                             <span id="result-pitch">-</span>
-                            <a href="#" class="explain-link" onclick="window.showPitchDeviationExplain(event)">⚠</a>
-                        </div>
-                        <div class="result-stat-label">平均音高偏差</div>
+                            <a href="#" class="explain-link" onclick="event.stopPropagation();window.showPitchDeviationExplain(event)">⚠</a>
+                        </span>
+                        <span class="result-stat-label">平均音高偏差</span>
+                        <span class="result-stat-value" id="result-duration">-</span>
+                        <span class="result-stat-label">平均時長偏差</span>
                     </div>
-                    <div class="result-stat">
-                        <div class="result-stat-value" id="result-duration">-</div>
-                        <div class="result-stat-label">平均時長偏差</div>
+                    <button class="results-panel-toggle" id="results-panel-toggle" aria-label="切換評估結果面板">
+                        <span class="results-panel-toggle-icon" id="results-panel-toggle-icon">▼</span>
+                    </button>
+                </div>
+                <div class="results-panel-content" id="results-panel-content">
+                    <div id="results-panel-body"></div>
+                </div>
+            </div>
+
+            <!-- 音高準度折疊面板（位於分數之下，水平滾動） -->
+            <div class="pitch-panel" id="pitch-panel" data-folded="true">
+                <div class="pitch-panel-header" onclick="window.togglePitchPanel()">
+                    <span class="pitch-panel-title">📈 音高準度</span>
+                    <button class="pitch-panel-toggle" id="pitch-panel-toggle" aria-label="切換音高準度面板">
+                        <span class="pitch-panel-toggle-icon" id="pitch-panel-toggle-icon">▼</span>
+                    </button>
+                </div>
+                <div class="pitch-panel-content" id="pitch-panel-content">
+                    <div class="pitch-chart-scroll">
+                        <div id="pitch-chart"></div>
                     </div>
                 </div>
             </div>
@@ -144,7 +163,7 @@ import {
 } from '../assets/js/practice-business.js';
         import {
             renderVocalTracks, renderAccompanimentTracks, renderStructureList,
-            updateSelectionUI, clearSelection, switchTab, logout
+            updateSelectionUI, clearSelection, switchTab, logout, togglePitchPanel, toggleResultsPanel
         } from '../assets/js/practice-ui.js';
 
         // --- 登入檢查 ---
@@ -165,6 +184,8 @@ import {
         window.togglePlayback = togglePlayback;
         window.clearSelection = clearSelection;
         window.switchTab = switchTab;
+        window.togglePitchPanel = togglePitchPanel;
+        window.toggleResultsPanel = toggleResultsPanel;
         window.logout = logout;
         window.stopReplayPlayback = stopReplayPlayback;
         window.analyzeAndSubmitRecording = analyzeAndSubmitRecording;

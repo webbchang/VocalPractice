@@ -284,15 +284,71 @@ export function clearSelection() {
     document.getElementById('range-actions').style.display = 'none';
     document.getElementById('current-range-label').textContent = '未選擇';
     // 隱藏結果面板
-    const resultsPanel = document.getElementById('results-panel');
+    const resultsPanel = document.getElementById('results-panel-foldable');
     if (resultsPanel) {
         resultsPanel.classList.remove('visible');
+        resultsPanel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('results-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+        const body = document.getElementById('results-panel-body');
+        if (body) body.innerHTML = '';
+    }
+    // 隱藏音高準度折疊面板
+    const pitchPanel = document.getElementById('pitch-panel');
+    if (pitchPanel) {
+        pitchPanel.classList.remove('visible');
+        pitchPanel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('pitch-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+        const pitchChart = document.getElementById('pitch-chart');
+        if (pitchChart) pitchChart.innerHTML = '';
     }
     renderStructureList();
     renderLyricsPanel();
 }
 
 // --- 雜項 UI ---
+
+/**
+ * 折疊/展開音高準度面板
+ */
+export function togglePitchPanel() {
+    const panel = document.getElementById('pitch-panel');
+    if (!panel) return;
+    const isFolded = panel.getAttribute('data-folded') === 'true';
+    if (isFolded) {
+        panel.classList.add('visible');
+        panel.setAttribute('data-folded', 'false');
+        const icon = document.getElementById('pitch-panel-toggle-icon');
+        if (icon) icon.textContent = '▲';
+    } else {
+        panel.classList.remove('visible');
+        panel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('pitch-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+    }
+}
+
+/**
+ * 折疊/展開練習評估結果面板
+ */
+export function toggleResultsPanel() {
+    const panel = document.getElementById('results-panel-foldable');
+    if (!panel) return;
+    const isFolded = panel.getAttribute('data-folded') === 'true';
+    if (isFolded) {
+        panel.classList.add('visible');
+        panel.setAttribute('data-folded', 'false');
+        const icon = document.getElementById('results-panel-toggle-icon');
+        if (icon) icon.textContent = '▲';
+    } else {
+        panel.classList.remove('visible');
+        panel.setAttribute('data-folded', 'true');
+        const icon = document.getElementById('results-panel-toggle-icon');
+        if (icon) icon.textContent = '▼';
+    }
+}
+
 export function switchTab(el, tab) {
     document.querySelectorAll('.viz-tab').forEach(t => t.classList.remove('active'));
     el.classList.add('active');
@@ -419,7 +475,13 @@ export function drawPitchDeviationChart(noteComparisons, container) {
     const xScale = (width - 2 * padding) / Math.max(maxTime, 0.1);
     
     // Y 軸 (音分偏差)
-    const deviations = noteComparisons.map(n => n.pitch_deviation_cents ?? n.PitchDeviationCents ?? 0);
+    // Only include matched notes in deviation calculations — missed notes have no measurement
+    const matchedNotes = noteComparisons.filter(n => {
+        const status = (n.match_status ?? n.MatchStatus ?? 'unknown');
+        const statusLower = typeof status === 'string' ? status.toLowerCase() : 'unknown';
+        return statusLower === 'matched';
+    });
+    const deviations = matchedNotes.map(n => n.pitch_deviation_cents ?? n.PitchDeviationCents ?? 0);
     const maxDeviation = Math.max(...deviations.map(Math.abs), 50); // 至少顯示 ±50 cent
     const yScale = (height - 2 * padding) / (2 * maxDeviation);
     const centerY = height / 2;
@@ -455,17 +517,24 @@ export function drawPitchDeviationChart(noteComparisons, container) {
     zeroLine.setAttribute("stroke-dasharray", "2,2");
     svg.appendChild(zeroLine);
     
-    // 數據點和連線
+    // 數據點和連線 (only plot matched notes — missed notes have no deviation measurement)
     const path = document.createElementNS(svgNS, "path");
-    let pathData = `M ${padding} ${centerY - (deviations[0] || 0) * yScale}`;
+    let pathData = `M ${padding} ${centerY}`;
     
+    let firstMatched = true;
     for (let i = 0; i < noteComparisons.length; i++) {
         const note = noteComparisons[i];
+        const matchStatus = note.match_status ?? note.MatchStatus ?? 'unknown';
+        const matchStatusLower = typeof matchStatus === 'string' ? matchStatus.toLowerCase() : 'unknown';
+        if (matchStatusLower !== 'matched') {
+            continue; // Skip missed notes — they have no real deviation data
+        }
         const x = padding + (note.ref_start ?? note.RefStart ?? 0) * xScale;
         const y = centerY - ((note.pitch_deviation_cents ?? note.PitchDeviationCents ?? 0) * yScale);
         
-        if (i === 0) {
+        if (firstMatched) {
             pathData += `M ${x} ${y}`;
+            firstMatched = false;
         } else {
             pathData += `L ${x} ${y}`;
         }
@@ -612,20 +681,30 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         // 音高偏差
         const pitchTd = document.createElement('td');
         const pitchDev = note.pitch_deviation_cents ?? note.PitchDeviationCents ?? 0;
-        pitchTd.textContent = pitchDev.toFixed(1);
+        // Missed notes have no actual deviation measurement — display "—" instead of misleading 0
+        if (matchStatusLower === 'missed') {
+            pitchTd.textContent = '—';
+        } else {
+            pitchTd.textContent = pitchDev.toFixed(1);
+        }
         pitchTd.style.border = '1px solid #444';
         pitchTd.style.padding = '8px';
-        pitchTd.style.color = Math.abs(pitchDev) < 20 ? '#4CAF50' : '#F44336';
+        pitchTd.style.color = matchStatusLower === 'missed' ? '#888' : (Math.abs(pitchDev) < 20 ? '#4CAF50' : '#F44336');
         pitchTd.style.fontSize = '13px';
         tr.appendChild(pitchTd);
         
         // 時長偏差
         const durationTd = document.createElement('td');
         const durationDev = note.duration_deviation_sec ?? note.DurationDeviationSec ?? 0;
-        durationTd.textContent = durationDev.toFixed(3);
+        // Missed notes have no actual deviation measurement — display "—" instead of misleading 0
+        if (matchStatusLower === 'missed') {
+            durationTd.textContent = '—';
+        } else {
+            durationTd.textContent = durationDev.toFixed(3);
+        }
         durationTd.style.border = '1px solid #444';
         durationTd.style.padding = '8px';
-        durationTd.style.color = Math.abs(durationDev) < 0.1 ? '#4CAF50' : '#F44336';
+        durationTd.style.color = matchStatusLower === 'missed' ? '#888' : (Math.abs(durationDev) < 0.1 ? '#4CAF50' : '#F44336');
         durationTd.style.fontSize = '13px';
         tr.appendChild(durationTd);
         

@@ -393,128 +393,6 @@
             font-variant-numeric: tabular-nums;
         }
 
-        .results-panel {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 24px;
-            display: none;
-        }
-
-        .results-panel.visible {
-            display: block;
-        }
-
-        .results-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            margin-bottom: 24px;
-        }
-
-        .result-stat {
-            background: #1a1a2e;
-            border-radius: 8px;
-            padding: 16px;
-            text-align: center;
-        }
-
-        .result-stat-value {
-            font-size: 24px;
-            font-weight: 600;
-            color: #3498db;
-        }
-
-        .result-stat-label {
-            font-size: 12px;
-            color: #888;
-            margin-top: 4px;
-        }
-
-        .explain-link {
-            display: inline-block;
-            margin-left: 6px;
-            font-size: 11px;
-            color: #ffc107;
-            text-decoration: none;
-            font-weight: normal;
-            vertical-align: middle;
-        }
-
-        .explain-link:hover {
-            color: #ffdd59;
-            text-decoration: underline;
-        }
-
-        /* Explain dialog */
-        .explain-dialog-overlay {
-            position: fixed;
-            top: 0; left: 0;
-            width: 100%; height: 100%;
-            background: rgba(0, 0, 0, 0.7);
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .explain-dialog {
-            background: #16213e;
-            border-radius: 12px;
-            padding: 24px;
-            max-width: 480px;
-            width: 90%;
-            border: 1px solid #333;
-        }
-
-        .explain-dialog-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 16px;
-        }
-
-        .explain-dialog-title {
-            font-size: 16px;
-            font-weight: 600;
-            color: #fff;
-        }
-
-        .explain-dialog-close {
-            background: none;
-            border: none;
-            font-size: 24px;
-            color: #888;
-            cursor: pointer;
-            padding: 0;
-            width: 30px;
-            height: 30px;
-        }
-
-        .explain-dialog-close:hover {
-            color: #fff;
-        }
-
-        .explain-dialog-body p {
-            color: #ddd;
-            font-size: 14px;
-            line-height: 1.6;
-            margin: 0 0 12px 0;
-        }
-
-        .explain-dialog-body ul {
-            color: #ddd;
-            font-size: 14px;
-            line-height: 1.8;
-            padding-left: 20px;
-            margin: 0 0 12px 0;
-        }
-
-        /* Dual assessment card comparison */
-        .assessment-comparison h3 {
-            font-size: 16px;
-            color: #fff;
-        }
-
         .results-grid-two {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -584,6 +462,158 @@
             margin: 0 0 6px 0;
         }
 
+        .results-panel-foldable {
+            background: #16213e;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: max-height 0.3s ease, opacity 0.3s ease;
+            opacity: 0;
+            max-height: 0;
+        }
+
+        .results-panel-foldable.visible {
+            opacity: 1;
+            max-height: 2000px;
+        }
+
+        .results-panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .results-panel-header:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .results-panel-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .results-summary {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex: 1;
+            justify-content: center;
+        }
+
+        .results-summary .result-stat-value {
+            font-size: 18px;
+        }
+
+        .results-summary .result-stat-label {
+            font-size: 11px;
+            color: #888;
+        }
+
+        .explain-link {
+            display: inline-block;
+            margin-left: 6px;
+            font-size: 11px;
+            color: #ffc107;
+            text-decoration: none;
+            font-weight: normal;
+            vertical-align: middle;
+        }
+
+        .explain-link:hover {
+            color: #ffdd59;
+            text-decoration: underline;
+        }
+
+        .results-panel-toggle {
+            background: none;
+            border: none;
+            color: #888;
+            font-size: 18px;
+            cursor: pointer;
+            padding: 4px 8px;
+            transition: color 0.2s;
+        }
+
+        .results-panel-toggle:hover {
+            color: #eee;
+        }
+
+        .results-panel-content {
+            padding: 16px 20px;
+            display: none;
+        }
+
+        .results-panel-foldable.visible .results-panel-content {
+            display: block;
+        }
+
+        /* Explain dialog */
+        .explain-dialog-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .explain-dialog {
+            background: #16213e;
+            border-radius: 12px;
+            padding: 24px;
+            max-width: 480px;
+            width: 90%;
+            border: 1px solid #333;
+        }
+
+        .explain-dialog-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .explain-dialog-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+        }
+
+        .explain-dialog-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: #888;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        }
+
+        .explain-dialog-close:hover {
+            color: #fff;
+        }
+
+        .explain-dialog-body p {
+            color: #ddd;
+            font-size: 14px;
+            line-height: 1.6;
+            margin: 0 0 12px 0;
+        }
+
+        .explain-dialog-body ul {
+            color: #ddd;
+            font-size: 14px;
+            line-height: 1.8;
+            padding-left: 20px;
+            margin: 0 0 12px 0;
+        }
+
         .no-structures {
             text-align: center;
             padding: 30px;
@@ -632,6 +662,11 @@
     padding: 16px;
 }
 
+.viz-container {
+    display: flex;
+    justify-content: center;
+}
+
 .viz-title {
     font-size: 14px;
     color: #888;
@@ -639,6 +674,92 @@
     margin-bottom: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+}
+
+/* 音高準度折疊面板 */
+.pitch-panel {
+    background: #16213e;
+    border-radius: 12px;
+    margin-top: 16px;
+    overflow: hidden;
+    transition: max-height 0.3s ease, opacity 0.3s ease;
+    opacity: 0;
+    max-height: 0;
+    pointer-events: none;
+}
+
+.pitch-panel.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.pitch-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 20px;
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.pitch-panel-header:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.pitch-panel-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #eee;
+}
+
+.pitch-panel-toggle {
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: color 0.2s;
+}
+
+.pitch-panel-toggle:hover {
+    color: #eee;
+}
+
+.pitch-panel-content {
+    padding: 16px 20px;
+    display: none;
+}
+
+.pitch-panel.visible .pitch-panel-content {
+    display: block;
+}
+
+.pitch-chart-scroll {
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 4px 0;
+}
+
+.pitch-chart-scroll::-webkit-scrollbar {
+    height: 8px;
+}
+
+.pitch-chart-scroll::-webkit-scrollbar-thumb {
+    background: #2c3e50;
+    border-radius: 4px;
+}
+
+.pitch-chart-scroll::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.pitch-placeholder {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+    font-size: 14px;
 }
 
 /* 詳細結果面板 */
@@ -720,8 +841,8 @@
 
 /* 響應式調整 */
 @media (max-width: 768px) {
-    .viz-container {
-        flex-direction: column;
+    .results-grid-two {
+        grid-template-columns: 1fr;
     }
     
     .main-container {

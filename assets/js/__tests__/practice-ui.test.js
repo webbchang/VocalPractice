@@ -19,6 +19,12 @@ function setupDOM() {
         <div class="viz-tab"></div>
         <div id="lyrics-content"></div>
         <div id="lyrics-status"></div>
+        <div id="results-panel-foldable" class="results-panel" data-folded="true">
+            <div id="results-panel-body"></div>
+        </div>
+        <div id="pitch-panel" data-folded="true">
+            <div id="pitch-chart"></div>
+        </div>
     `;
 }
 
