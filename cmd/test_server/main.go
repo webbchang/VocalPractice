@@ -1,24 +1,30 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	"vocal-practice-app/internal/domain"
 	"vocal-practice-app/internal/handler"
+	"vocal-practice-app/internal/seed"
 	"vocal-practice-app/internal/service"
 	"vocal-practice-app/internal/storage"
+	"vocal-practice-app/internal/storage/backup"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 )
 
 func main() {
@@ -56,6 +62,9 @@ func main() {
 		databaseURL = os.Getenv("DATABASE_URL")
 	}
 	var store storage.Store
+	var backupMgr *backup.Manager
+	var memStore *storage.MemoryStore
+	restored := false
 	if databaseURL != "" {
 		pgStore, err := storage.NewPostgresStore(databaseURL)
 		if err != nil {
@@ -65,13 +74,43 @@ func main() {
 		store = pgStore
 		log.Printf("Using PostgreSQL store: %s", databaseURL)
 	} else {
-		store = storage.NewMemoryStore()
+		memStore = storage.NewMemoryStore()
+		store = memStore
 		log.Println("DATABASE_URL not set, using in-memory store")
+
+		// Persist in-memory data to a local file so it survives restarts.
+		backupFile := os.Getenv("TEST_BACKUP_FILE")
+		if backupFile == "" {
+			backupFile = "./data_test/memory_backup.json"
+		}
+		backupInterval := 1 * time.Minute
+		if env := os.Getenv("BACKUP_INTERVAL"); env != "" {
+			if d, err := time.ParseDuration(env); err == nil && d > 0 {
+				backupInterval = d
+			}
+		}
+		backupMgr = backup.NewManager(memStore, backupFile)
+		if err := backupMgr.Restore(); err != nil {
+			if !errors.Is(err, backup.ErrNoBackupFile) {
+				log.Printf("WARN: restoring in-memory backup failed: %v", err)
+			} else {
+				log.Printf("No existing backup found at %s; starting fresh", backupMgr.FilePath())
+			}
+		} else {
+			restored = true
+		}
+		backupMgr.StartAutoBackup(backupInterval)
 	}
 
 	midiParser := service.NewMIDIParser()
 
-	seedTestData(store, midiParser, absUploadDir)
+	// Only seed songs on a fresh start: when data was restored from the
+	// backup file the songs already exist, so re-seeding would duplicate them.
+	if memStore == nil || !restored {
+		seedSongData(store, midiParser, absUploadDir)
+	} else {
+		log.Printf("[seed] restored data from backup; skipping song seeding")
+	}
 
 	authHandler := handler.NewAuthHandler(store, jwtSecret)
 	adminUsersHandler := handler.NewAdminUsersHandler(store)
@@ -150,74 +189,91 @@ func main() {
 
 	fmt.Printf("Upload directory: %s\n", absUploadDir)
 
+	// Set up graceful shutdown: flush in-memory backup and stop serving.
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
+
+	var servers []*http.Server
+
+	shutdown := func() {
+		log.Println("Shutting down...")
+		if backupMgr != nil {
+			if err := backupMgr.Close(); err != nil {
+				log.Printf("backup flush on shutdown failed: %v", err)
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for _, srv := range servers {
+			if err := srv.Shutdown(ctx); err != nil {
+				log.Printf("server shutdown error: %v", err)
+			}
+		}
+	}
+
 	// Start server with HTTPS if TLS cert/key are provided, otherwise HTTP
 	if tlsCert != "" && tlsKey != "" {
 		fmt.Printf("Test server starting on %s (HTTPS)\n", httpsPort)
+		srv := &http.Server{Addr: httpsPort, Handler: r}
+		servers = append(servers, srv)
 		if redirectHTTP {
 			// Start HTTP server that redirects to HTTPS
+			redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				http.Redirect(w, req, "https://"+req.Host+req.URL.RequestURI(), http.StatusMovedPermanently)
+			})
+			httpSrv := &http.Server{Addr: port, Handler: redirectHandler}
+			servers = append(servers, httpSrv)
+			fmt.Printf("HTTP redirect server starting on %s -> %s\n", port, httpsPort)
 			go func() {
-				redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-					host := req.Host
-					// Replace the HTTP port with the HTTPS port
-					redirectURL := "https://" + host + req.URL.RequestURI()
-					http.Redirect(w, req, redirectURL, http.StatusMovedPermanently)
-				})
-				fmt.Printf("HTTP redirect server starting on %s -> %s\n", port, httpsPort)
-				log.Fatal(http.ListenAndServe(port, redirectHandler))
+				if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					log.Fatalf("HTTP redirect server error: %v", err)
+				}
 			}()
 		}
-		log.Fatal(http.ListenAndServeTLS(httpsPort, tlsCert, tlsKey, r))
+		go func() {
+			if err := srv.ListenAndServeTLS(tlsCert, tlsKey); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("HTTPS server error: %v", err)
+			}
+		}()
 	} else {
 		fmt.Printf("Test server starting on %s (HTTP)\n", port)
-		log.Fatal(http.ListenAndServe(port, r))
+		srv := &http.Server{Addr: port, Handler: r}
+		servers = append(servers, srv)
+		go func() {
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("HTTP server error: %v", err)
+			}
+		}()
+	}
+
+	sig := <-signalCh
+	log.Printf("Received %s, shutting down...", sig)
+	shutdown()
+}
+
+func seedSongData(store storage.Store, midiParser *service.MIDIParser, uploadDir string) {
+	songsSeed, err := seed.LoadSongs(seed.SongsFile())
+	if err != nil {
+		log.Printf("[seed] no seed songs loaded from %s: %v", seed.SongsFile(), err)
+		return
+	}
+	for _, rec := range songsSeed {
+		seedSong(store, midiParser, uploadDir, rec)
 	}
 }
 
-func seedTestData(store storage.Store, midiParser *service.MIDIParser, uploadDir string) {
-	// Admin: admin / admin@localhost / a1d2m3i4n
-	adminPwd, _ := bcrypt.GenerateFromPassword([]byte("a1d2m3i4n"), bcrypt.DefaultCost)
-	admin := domain.NewUser("admin", "admin@localhost", string(adminPwd))
-	if err := store.CreateUser(admin); err != nil {
-		// May already exist from MemoryStore seed; update password to bcrypt
-		existing, _ := store.GetUserByEmail("admin@localhost")
-		if existing != nil {
-			existing.PasswordHash = string(adminPwd)
-			store.UpdateUser(existing)
-			log.Printf("[seed] admin password updated to bcrypt")
-		} else {
-			log.Printf("[seed] create admin skipped: %v", err)
-		}
-	} else {
-		log.Printf("[seed] admin ready: admin@localhost / a1d2m3i4n")
-	}
-
-	// User: webb / webbchang@gmail.com / test1234
-	userPwd, _ := bcrypt.GenerateFromPassword([]byte("test1234"), bcrypt.DefaultCost)
-	user := domain.NewUser("webb", "webbchang@gmail.com", string(userPwd))
-	if err := store.CreateUser(user); err != nil {
-		existing, _ := store.GetUserByEmail("webbchang@gmail.com")
-		if existing != nil {
-			existing.PasswordHash = string(userPwd)
-			store.UpdateUser(existing)
-			log.Printf("[seed] user password updated to bcrypt")
-		} else {
-			log.Printf("[seed] create user skipped: %v", err)
-		}
-	} else {
-		log.Printf("[seed] user ready: webbchang@gmail.com / test1234")
-	}
-
-	// Load 油桐花 (Josu Elberdin)
-	midiPath := "test_data/all_油桐花_hidden (2).mid"
+func seedSong(store storage.Store, midiParser *service.MIDIParser, uploadDir string, rec seed.SongRecord) {
+	// Load seed song (e.g. 油桐花 by Josu Elberdin) from local storage.
+	midiPath := resolveSeedPath(rec.MIDIPath)
 	data, err := os.ReadFile(midiPath)
 	if err != nil {
-		log.Printf("[seed] 油桐花 MIDI not found: %v, you can upload later via POST /api/v1/admin/songs", err)
+		log.Printf("[seed] %s MIDI not found: %v, you can upload later via POST /api/v1/admin/songs", rec.Title, err)
 		return
 	}
 
-	song, err := midiParser.Parse(data, "油桐花", "Josu Elberdin")
+	song, err := midiParser.Parse(data, rec.Title, rec.Artist)
 	if err != nil {
-		log.Printf("[seed] 油桐花 parse failed: %v", err)
+		log.Printf("[seed] %s parse failed: %v", rec.Title, err)
 		return
 	}
 
@@ -245,7 +301,7 @@ func seedTestData(store storage.Store, midiParser *service.MIDIParser, uploadDir
 	log.Printf("[seed] tracks: %s", string(trackNamesJSON))
 
 	// Load structures from CSV
-	csvPath := "test_data/油桐花-structures.csv"
+	csvPath := resolveSeedPath(rec.StructuresCSV)
 	csvData, err := os.ReadFile(csvPath)
 	if err != nil {
 		log.Printf("[seed] 油桐花 structures CSV not found: %v", err)
@@ -478,6 +534,16 @@ func parseSeedCSVLine(line string) []string {
 	}
 	fields = append(fields, cur.String())
 	return fields
+}
+
+// resolveSeedPath resolves a seed data path (which may be relative to the
+// repository root in songs.json) to an absolute path. Absolute paths are
+// returned unchanged.
+func resolveSeedPath(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(seed.RepoRoot(), p)
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

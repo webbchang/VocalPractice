@@ -1,0 +1,26 @@
+[
+  {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "username": "admin",
+    "email": "admin@localhost",
+    "password_hash": "rJaJ4ickJwheNbnT4-i-2IyzQ0gotDuG_AWWytTG4nA",
+    "role": "admin",
+    "is_active": true
+  },
+  {
+    "id": "00000000-0000-0000-0000-000000000002",
+    "username": "testuser",
+    "email": "test@localhost",
+    "password_hash": "k36NX7tIvUlJU2zWW401xCa4DS-DDFwwjizexCKuIkQ",
+    "role": "user",
+    "is_active": true
+  },
+  {
+    "id": "00000000-0000-0000-0000-000000000003",
+    "username": "webb",
+    "email": "webbchang@gmail.com",
+    "password_hash": "k36NX7tIvUlJU2zWW401xCa4DS-DDFwwjizexCKuIkQ",
+    "role": "user",
+    "is_active": true
+  }
+]

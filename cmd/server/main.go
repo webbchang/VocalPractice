@@ -1,16 +1,22 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
+	"time"
 
 	"vocal-practice-app/internal/handler"
 	"vocal-practice-app/internal/service"
 	"vocal-practice-app/internal/storage"
+	"vocal-practice-app/internal/storage/backup"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -55,6 +61,7 @@ func main() {
 	// Initialize store: PostgreSQL or in-memory
 	databaseURL := os.Getenv("DATABASE_URL")
 	var store storage.Store
+	var backupMgr *backup.Manager
 	if databaseURL != "" {
 		pgStore, err := storage.NewPostgresStore(databaseURL)
 		if err != nil {
@@ -64,8 +71,30 @@ func main() {
 		store = pgStore
 		log.Println("Using PostgreSQL store")
 	} else {
-		store = storage.NewMemoryStore()
+		memStore := storage.NewMemoryStore()
+		store = memStore
 		log.Println("DATABASE_URL not set, using in-memory store")
+
+		// Persist in-memory data to a local file so it survives restarts.
+		backupFile := os.Getenv("BACKUP_FILE")
+		if backupFile == "" {
+			backupFile = "./data/memory_backup.json"
+		}
+		backupInterval := 1 * time.Minute
+		if env := os.Getenv("BACKUP_INTERVAL"); env != "" {
+			if d, err := time.ParseDuration(env); err == nil && d > 0 {
+				backupInterval = d
+			}
+		}
+		backupMgr = backup.NewManager(memStore, backupFile)
+		if err := backupMgr.Restore(); err != nil {
+			if !errors.Is(err, backup.ErrNoBackupFile) {
+				log.Printf("WARN: restoring in-memory backup failed: %v", err)
+			} else {
+				log.Printf("No existing backup found at %s; starting fresh", backupMgr.FilePath())
+			}
+		}
+		backupMgr.StartAutoBackup(backupInterval)
 	}
 
 	// Override default admin credentials if flags provided
@@ -179,27 +208,66 @@ func main() {
 
 	fmt.Printf("Upload directory: %s\n", absUploadDir)
 
+	// Set up graceful shutdown: flush in-memory backup and stop serving.
+	signalCh := make(chan os.Signal, 1)
+	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
+
+	var servers []*http.Server
+
+	shutdown := func() {
+		log.Println("Shutting down...")
+		if backupMgr != nil {
+			if err := backupMgr.Close(); err != nil {
+				log.Printf("backup flush on shutdown failed: %v", err)
+			}
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		for _, srv := range servers {
+			if err := srv.Shutdown(ctx); err != nil {
+				log.Printf("server shutdown error: %v", err)
+			}
+		}
+	}
+
 	// Start server with HTTPS if TLS cert/key are provided, otherwise HTTP
 	if tlsCert != "" && tlsKey != "" {
 		fmt.Printf("Vocal Practice App server starting on %s (HTTPS)\n", httpsPort)
+		srv := &http.Server{Addr: httpsPort, Handler: r}
+		servers = append(servers, srv)
 		if redirectHTTP {
 			// Start HTTP server that redirects to HTTPS
+			redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				http.Redirect(w, req, "https://"+req.Host+req.URL.RequestURI(), http.StatusMovedPermanently)
+			})
+			httpSrv := &http.Server{Addr: port, Handler: redirectHandler}
+			servers = append(servers, httpSrv)
+			fmt.Printf("HTTP redirect server starting on %s -> %s\n", port, httpsPort)
 			go func() {
-				redirectHandler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-					host := req.Host
-					// Replace the HTTP port with the HTTPS port
-					redirectURL := "https://" + host + req.URL.RequestURI()
-					http.Redirect(w, req, redirectURL, http.StatusMovedPermanently)
-				})
-				fmt.Printf("HTTP redirect server starting on %s -> %s\n", port, httpsPort)
-				log.Fatal(http.ListenAndServe(port, redirectHandler))
+				if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+					log.Fatalf("HTTP redirect server error: %v", err)
+				}
 			}()
 		}
-		log.Fatal(http.ListenAndServeTLS(httpsPort, tlsCert, tlsKey, r))
+		go func() {
+			if err := srv.ListenAndServeTLS(tlsCert, tlsKey); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("HTTPS server error: %v", err)
+			}
+		}()
 	} else {
 		fmt.Printf("Vocal Practice App server starting on %s (HTTP)\n", port)
-		log.Fatal(http.ListenAndServe(port, r))
+		srv := &http.Server{Addr: port, Handler: r}
+		servers = append(servers, srv)
+		go func() {
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatalf("HTTP server error: %v", err)
+			}
+		}()
 	}
+
+	sig := <-signalCh
+	log.Printf("Received %s, shutting down...", sig)
+	shutdown()
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

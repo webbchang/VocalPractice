@@ -35,6 +35,13 @@ debug_uploads/
 # Test server binary
 /test_server_test
 
+# Runtime backup of in-memory store (written by internal/storage/backup).
+# The seed definitions under data/seed/ are tracked on purpose; only the
+# runtime backup file is ignored.
+/data/memory_backup.json
+/data_test/
+/memory_backup.json
+
 # TLS certificates
 tls/
 

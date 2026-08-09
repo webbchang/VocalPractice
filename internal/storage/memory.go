@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"vocal-practice-app/internal/domain"
+	"vocal-practice-app/internal/seed"
 
 	"github.com/google/uuid"
 )
@@ -28,6 +29,9 @@ type MemoryStore struct {
 	structures   map[uuid.UUID]*domain.SongStructure
 	assessments  map[uuid.UUID]*domain.UserAssessment
 	trackLyrics  map[string]*domain.TrackLyrics
+	// writeCallback is invoked after every successful mutating write so that
+	// external components (e.g. the backup manager) can react to changes.
+	writeCallback func()
 }
 
 func NewMemoryStore() *MemoryStore {
@@ -43,8 +47,59 @@ func NewMemoryStore() *MemoryStore {
 	return s
 }
 
-// seedUsers creates default users for development/demo.
+// SetWriteCallback registers a function invoked (without holding the store
+// lock) after every successful mutating write to the store. It is intended
+// for components that need to react to changes — typically to persist the
+// in-memory state to local disk. Passing nil clears any previously registered
+// callback.
+func (s *MemoryStore) SetWriteCallback(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.writeCallback = fn
+}
+
+// notifyWrite fires the registered write callback, if any. It must be called
+// while the caller already holds the store write lock (s.mu), which provides
+// the synchronization necessary to read writeCallback safely under the race
+// detector. The callback itself must not acquire the store lock.
+func (s *MemoryStore) notifyWrite() {
+	fn := s.writeCallback
+	if fn != nil {
+		fn()
+	}
+}
+
+// seedUsers populates the store with default demo users. The authoritative
+// seed data lives in the local storage file data/seed/users.json; if that file
+// cannot be loaded, a minimal set of built-in dev users is used as a fallback.
 func (s *MemoryStore) seedUsers() {
+	recs, err := seed.LoadUsers(seed.UsersFile())
+	if err == nil && len(recs) > 0 {
+		for _, r := range recs {
+			id, perr := uuid.Parse(r.ID)
+			if perr != nil {
+				continue
+			}
+			u := &domain.User{
+				ID:           id,
+				Username:     r.Username,
+				Email:        r.Email,
+				PasswordHash: r.PasswordHash,
+				Role:         r.Role,
+				IsActive:     r.IsActive,
+				CreatedAt:    time.Now(),
+			}
+			s.users[u.ID] = u
+			s.usersByEmail[u.Email] = u
+		}
+		return
+	}
+	seedDefaultUsers(s)
+}
+
+// seedDefaultUsers is the built-in fallback used only when the seed data file
+// cannot be loaded (e.g. running the binary outside the repository).
+func seedDefaultUsers(s *MemoryStore) {
 	admin := &domain.User{
 		ID:           uuid.MustParse("00000000-0000-0000-0000-000000000001"),
 		Username:     "admin",
@@ -85,6 +140,7 @@ func (s *MemoryStore) CreateUser(user *domain.User) error {
 	}
 	s.users[user.ID] = user
 	s.usersByEmail[user.Email] = user
+	s.notifyWrite()
 	return nil
 }
 
@@ -115,6 +171,7 @@ func (s *MemoryStore) UpdateUser(user *domain.User) error {
 		return ErrNotFound
 	}
 	s.users[user.ID] = user
+	s.notifyWrite()
 	return nil
 }
 
@@ -134,6 +191,7 @@ func (s *MemoryStore) CreateSong(song *domain.Song) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.songs[song.ID] = song
+	s.notifyWrite()
 	return nil
 }
 
@@ -202,6 +260,7 @@ func (s *MemoryStore) SetActiveVersion(groupID, songID uuid.UUID) error {
 		return ErrNotFound
 	}
 	target.IsActive = true
+	s.notifyWrite()
 	return nil
 }
 
@@ -212,6 +271,7 @@ func (s *MemoryStore) DeleteSong(id uuid.UUID) error {
 		return ErrNotFound
 	}
 	delete(s.songs, id)
+	s.notifyWrite()
 	return nil
 }
 
@@ -227,6 +287,7 @@ func (s *MemoryStore) UpdateTrack(songID, trackID uuid.UUID, updates map[string]
 			if v, ok := updates["is_vocal"]; ok {
 				song.Tracks[i].IsVocal = v.(bool)
 			}
+			s.notifyWrite()
 			return nil
 		}
 	}
@@ -241,6 +302,7 @@ func (s *MemoryStore) CreateStructure(structures []*domain.SongStructure) error 
 	for _, st := range structures {
 		s.structures[st.ID] = st
 	}
+	s.notifyWrite()
 	return nil
 }
 
@@ -261,6 +323,7 @@ func (s *MemoryStore) UpdateStructure(st *domain.SongStructure) error {
 		return ErrNotFound
 	}
 	s.structures[st.ID] = st
+	s.notifyWrite()
 	return nil
 }
 
@@ -276,6 +339,7 @@ func (s *MemoryStore) DeleteStructure(id uuid.UUID) error {
 		return ErrNotFound
 	}
 	delete(s.structures, id)
+	s.notifyWrite()
 	return nil
 }
 
@@ -287,6 +351,7 @@ func (s *MemoryStore) DeleteAllStructuresBySong(songID uuid.UUID) error {
 			delete(s.structures, sid)
 		}
 	}
+	s.notifyWrite()
 	return nil
 }
 
@@ -454,6 +519,7 @@ func (s *MemoryStore) CreateAssessment(a *domain.UserAssessment) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.assessments[a.ID] = a
+	s.notifyWrite()
 	return nil
 }
 
@@ -497,6 +563,7 @@ func (s *MemoryStore) DeleteAssessment(id uuid.UUID) error {
 		return ErrNotFound
 	}
 	delete(s.assessments, id)
+	s.notifyWrite()
 	return nil
 }
 
@@ -553,6 +620,7 @@ func (s *MemoryStore) UpsertTrackLyrics(trackID, structureID uuid.UUID, lyrics s
 	} else {
 		s.trackLyrics[key] = domain.NewTrackLyrics(trackID, structureID, lyrics)
 	}
+	s.notifyWrite()
 	return nil
 }
 
@@ -603,5 +671,6 @@ func (s *MemoryStore) DeleteTrackLyrics(trackID, structureID uuid.UUID) error {
 	defer s.mu.Unlock()
 	key := trackID.String() + ":" + structureID.String()
 	delete(s.trackLyrics, key)
+	s.notifyWrite()
 	return nil
 }
