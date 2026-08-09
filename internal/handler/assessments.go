@@ -469,9 +469,18 @@ func (h *UserAssessmentsHandler) downloadCSV(w http.ResponseWriter, r *http.Requ
 			pitchDev = nc.PitchDeviationCents
 			durationDev = nc.DurationDeviationSec
 			
-			buf.WriteString(fmt.Sprintf("%d,%d,%f,%f,%d,%f,%f,%s,%f,%f\n", 
+			// For missed notes, deviation fields are uninitialized defaults (0.0).
+			// Display "N/A" to avoid the misleading appearance of "0 deviation = perfect match".
+			pitchDevStr := fmt.Sprintf("%f", pitchDev)
+			durationDevStr := fmt.Sprintf("%f", durationDev)
+			if matchStatus == "missed" {
+				pitchDevStr = "N/A"
+				durationDevStr = "N/A"
+			}
+			
+			buf.WriteString(fmt.Sprintf("%d,%d,%f,%f,%d,%f,%f,%s,%s,%s\n", 
 				i, nc.RefPitch, nc.RefStart, nc.RefEnd, userPitch, userStart, userEnd, 
-				matchStatus, pitchDev, durationDev))
+				matchStatus, pitchDevStr, durationDevStr))
 		}
 	}
 	
