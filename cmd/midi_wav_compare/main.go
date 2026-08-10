@@ -619,6 +619,22 @@ func main() {
 	// offset=0.41 詳細比較資料
 	report.Offset041 = compareNotes(refNotes, detected, 0.41, 0.5, 1)
 
+	// 診斷：測試 overlap=0.8（pitchTolerance=1）
+	fmt.Printf("\n--- Overlap 0.8 vs 0.5 (offset=0.41, pitchTolerance=1) ---\n")
+	for _, ov := range []float64{0.5, 0.7, 0.8} {
+		res := compareNotes(refNotes, detected, 0.41, ov, 1)
+		cnt := 0
+		var missed []string
+		for i, c := range res {
+			if c.MatchStatus == "matched" {
+				cnt++
+			} else {
+				missed = append(missed, fmt.Sprintf("[%d]pitch=%d time=[%.2f,%.2f]", i, c.RefPitch, c.RefStart, c.RefEnd))
+			}
+		}
+		fmt.Printf("  overlap=%.1f: %.1f%% (%d/%d) missed=%v\n", ov, float64(cnt)/float64(len(refNotes))*100, cnt, len(refNotes), missed)
+	}
+
 	// 9. 輸出
 	jsonData, _ := json.Marshal(report)
 	os.MkdirAll("midi_vs_wav_report_output", 0755)

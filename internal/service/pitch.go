@@ -8,13 +8,17 @@ import (
 
 // MIDINoteForTest is a simplified note struct for pitch detection and assessment
 type MIDINoteForTest struct {
-	Pitch      int
-	PitchFloat float64 // Float MIDI value for sub-semitone pitch deviation calculation
-	StartTime  float64
-	EndTime    float64
+	Pitch           int
+	PitchFloat      float64 // Float MIDI value for sub-semitone pitch deviation calculation
+	StartPitchFloat float64 // Float MIDI value at note start, used for cumulative drift merge threshold
+	StartTime       float64
+	EndTime         float64
 }
 
+
 // detectPitchGo performs autocorrelation-based pitch detection
+
+
 // Reference: "A Comparative Study of Pitch Detection Algorithms" by N. H. B. M. et al.
 // Method: Autocorrelation with window size 2048 samples and 50ms hop size
 func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
@@ -125,28 +129,36 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 
 		if currentNote == nil {
 			currentNote = &MIDINoteForTest{
-				Pitch:      roundedPitch,
-				PitchFloat: midiNote,
-				StartTime:  time,
-				EndTime:    time + float64(hopSize)/float64(sampleRate),
+				Pitch:           roundedPitch,
+				PitchFloat:      midiNote,
+				StartPitchFloat: midiNote,
+				StartTime:       time,
+				EndTime:         time + float64(hopSize)/float64(sampleRate),
 			}
 		} else {
-			if math.Abs(float64(currentNote.Pitch-roundedPitch)) >= 2 {
+			// Merge threshold: cumulative drift from note start's PitchFloat.
+			// If the current window's pitch has drifted > 0.99 semitones from
+			// the note's starting pitch, start a new note.
+			if math.Abs(currentNote.StartPitchFloat-midiNote) >= 0.99 {
 				currentNote.EndTime = time
 				notes = append(notes, *currentNote)
 				currentNote = &MIDINoteForTest{
-					Pitch:      roundedPitch,
-					PitchFloat: midiNote,
-					StartTime:  time,
-					EndTime:    time + float64(hopSize)/float64(sampleRate),
+					Pitch:           roundedPitch,
+					PitchFloat:      midiNote,
+					StartPitchFloat: midiNote,
+					StartTime:       time,
+					EndTime:         time + float64(hopSize)/float64(sampleRate),
 				}
 			} else {
 				currentNote.EndTime = time + float64(hopSize)/float64(sampleRate)
-				// Track the float MIDI value for pitch deviation
 				// Average the float MIDI across the note duration
 				currentNote.PitchFloat = (currentNote.PitchFloat + midiNote) / 2
+				// Recalculate Pitch from averaged PitchFloat
+				currentNote.Pitch = int(math.Round(currentNote.PitchFloat))
 			}
 		}
+
+
 	}
 
 	if currentNote != nil {

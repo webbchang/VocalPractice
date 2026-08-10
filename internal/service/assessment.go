@@ -112,7 +112,10 @@ func AssessRecordingWithVowelFiltering(
 	mergedRef := mergeSamePitchNotesForAssessment(refNotes)
 
 	// Step 4: Compare merged reference vs vowel-only detected notes
-	result := compareMergedNotesForAssessment(refNotes, mergedRef, vowelNotesForAssessment)
+	// pitchTolerance=1 (±1 semitone), overlapThreshold=0.5
+	result := compareMergedNotesForAssessment(refNotes, mergedRef, vowelNotesForAssessment, 1, 0.5)
+
+
 
 	return result, nil
 }
@@ -164,7 +167,8 @@ func AssessRecording(
 	mergedRef := mergeSamePitchNotesForAssessment(refNotes)
 
 	// Step 3: Compare merged reference vs detected notes
-	result := compareMergedNotesForAssessment(refNotes, mergedRef, detectedNotes)
+	// pitchTolerance=1 (±1 semitone), overlapThreshold=0.5
+	result := compareMergedNotesForAssessment(refNotes, mergedRef, detectedNotes, 1, 0.5)
 
 	return result, nil
 }
@@ -229,11 +233,16 @@ func mergeSamePitchNotesForAssessment(notes []MIDINoteForAssessment) []MergedNot
 	return merged
 }
 
-// compareMergedNotesForAssessment compares merged reference notes against detected notes
+// compareMergedNotesForAssessment compares merged reference notes against detected notes.
+// pitchTolerance: allowed semitone difference for matching (0 = exact match)
+// overlapThreshold: minimum overlap ratio (0~1) to consider a match
+// Multi-to-one matching is allowed: one detected note can match multiple ref notes.
 func compareMergedNotesForAssessment(
 	allRefs []MIDINoteForAssessment,
 	merged []MergedNoteForAssessment,
 	detected []MIDINoteForAssessment,
+	pitchTolerance int,
+	overlapThreshold float64,
 ) *AssessmentResultForAssessment {
 	detSorted := make([]MIDINoteForAssessment, len(detected))
 	copy(detSorted, detected)
@@ -251,7 +260,6 @@ func compareMergedNotesForAssessment(
 		}
 	}
 
-	usedDetected := make(map[int]bool)
 	matchedCount := 0
 	totalPitchDev := 0.0
 	totalDurationDev := 0.0
@@ -262,10 +270,8 @@ func compareMergedNotesForAssessment(
 		bestOverlap := 0.0
 
 		for i, det := range detSorted {
-			if usedDetected[i] {
-				continue
-			}
-			if det.Pitch != mg.Pitch {
+			// Pitch tolerance: allow ±pitchTolerance semitones
+			if math.Abs(float64(det.Pitch-mg.Pitch)) > float64(pitchTolerance) {
 				continue
 			}
 
@@ -291,8 +297,7 @@ func compareMergedNotesForAssessment(
 			}
 		}
 
-		if bestIdx >= 0 && bestOverlap >= 0.8 {
-			usedDetected[bestIdx] = true
+		if bestIdx >= 0 && bestOverlap >= overlapThreshold {
 			det := detSorted[bestIdx]
 
 			detLen := det.EndTime - det.StartTime
@@ -315,6 +320,8 @@ func compareMergedNotesForAssessment(
 			totalDurationDev += math.Abs(durDev) * float64(len(mg.EventIdx))
 		}
 	}
+
+
 
 	avgPitchDev := 0.0
 	avgDurationDev := 0.0
