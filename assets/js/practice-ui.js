@@ -287,6 +287,7 @@ export function clearSelection() {
     const resultsPanel = document.getElementById('results-panel-foldable');
     if (resultsPanel) {
         resultsPanel.classList.remove('visible');
+        resultsPanel.classList.add('hidden');
         resultsPanel.setAttribute('data-folded', 'true');
         const icon = document.getElementById('results-panel-toggle-icon');
         if (icon) icon.textContent = '▼';
@@ -297,6 +298,7 @@ export function clearSelection() {
     const pitchPanel = document.getElementById('pitch-panel');
     if (pitchPanel) {
         pitchPanel.classList.remove('visible');
+        pitchPanel.classList.add('hidden');
         pitchPanel.setAttribute('data-folded', 'true');
         const icon = document.getElementById('pitch-panel-toggle-icon');
         if (icon) icon.textContent = '▼';

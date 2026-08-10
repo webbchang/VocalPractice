@@ -72,6 +72,21 @@
                         <div>請先選擇歌曲與練習範圍</div>
                     </div>
                 </div>
+
+                <!-- 音高準度折疊面板（位於分析視覺化區域中，分數之下） -->
+                <div class="pitch-panel" id="pitch-panel" data-folded="true">
+                    <div class="pitch-panel-header" id="pitch-panel-header" onclick="window.togglePitchPanel()">
+                        <span class="pitch-panel-title">📈 音高準度</span>
+                        <button class="pitch-panel-toggle" id="pitch-panel-toggle" aria-label="切換音高準度面板">
+                            <span class="pitch-panel-toggle-icon" id="pitch-panel-toggle-icon">▼</span>
+                        </button>
+                    </div>
+                    <div class="pitch-panel-content" id="pitch-panel-content">
+                        <div class="pitch-chart-scroll">
+                            <div id="pitch-chart"></div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <div class="controls-area">
@@ -111,21 +126,6 @@
                 </div>
                 <div class="results-panel-content" id="results-panel-content">
                     <div id="results-panel-body"></div>
-                </div>
-            </div>
-
-            <!-- 音高準度折疊面板（位於分數之下，水平滾動） -->
-            <div class="pitch-panel" id="pitch-panel" data-folded="true">
-                <div class="pitch-panel-header" onclick="window.togglePitchPanel()">
-                    <span class="pitch-panel-title">📈 音高準度</span>
-                    <button class="pitch-panel-toggle" id="pitch-panel-toggle" aria-label="切換音高準度面板">
-                        <span class="pitch-panel-toggle-icon" id="pitch-panel-toggle-icon">▼</span>
-                    </button>
-                </div>
-                <div class="pitch-panel-content" id="pitch-panel-content">
-                    <div class="pitch-chart-scroll">
-                        <div id="pitch-chart"></div>
-                    </div>
                 </div>
             </div>
 

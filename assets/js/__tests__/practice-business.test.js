@@ -18,8 +18,11 @@ function setupDOM() {
         <button id="record-btn"><svg></svg></button>
         <div id="lyrics-content"></div>
         <div id="lyrics-status"></div>
-        <div id="results-panel-foldable" data-folded="true"></div>
-        <div id="results-panel-body"></div>
+        <div id="results-panel-foldable" data-folded="true">
+            <div id="results-panel-content">
+                <div id="results-panel-body"></div>
+            </div>
+        </div>
         <div id="results-panel-toggle-icon">▼</div>
         <div id="pitch-panel" data-folded="true"></div>
         <div id="pitch-panel-toggle-icon">▼</div>

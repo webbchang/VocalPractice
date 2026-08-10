@@ -332,7 +332,7 @@
         .chart-container {
             background: #1a1a2e;
             border-radius: 8px;
-            height: 300px;
+            min-height: 300px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -466,14 +466,11 @@
             background: #16213e;
             border-radius: 12px;
             overflow: hidden;
-            transition: max-height 0.3s ease, opacity 0.3s ease;
-            opacity: 0;
-            max-height: 0;
         }
 
-        .results-panel-foldable.visible {
-            opacity: 1;
-            max-height: 2000px;
+        /* 完全隱藏（無標題、無按鈕） */
+        .results-panel-foldable.hidden {
+            display: none;
         }
 
         .results-panel-header {
@@ -542,12 +539,15 @@
         }
 
         .results-panel-content {
-            padding: 16px 20px;
-            display: none;
+            max-height: 0;
+            overflow: hidden;
+            padding: 0 20px;
+            transition: max-height 0.3s ease;
         }
 
         .results-panel-foldable.visible .results-panel-content {
-            display: block;
+            max-height: 2000px;
+            padding: 16px 20px;
         }
 
         /* Explain dialog */
@@ -651,12 +651,13 @@
 /* 視覺化容器 */
 .viz-container {
     display: flex;
-    gap: 20px;
+    justify-content: center;
     margin-bottom: 20px;
 }
 
 .viz-score, .viz-pitch {
     flex: 1;
+    max-width: 400px;
     background: #16213e;
     border-radius: 8px;
     padding: 16px;
@@ -682,15 +683,12 @@
     border-radius: 12px;
     margin-top: 16px;
     overflow: hidden;
-    transition: max-height 0.3s ease, opacity 0.3s ease;
-    opacity: 0;
-    max-height: 0;
-    pointer-events: none;
+    transition: opacity 0.3s ease;
 }
 
-.pitch-panel.visible {
-    opacity: 1;
-    pointer-events: auto;
+/* 完全隱藏（無標題、無按鈕） */
+.pitch-panel.hidden {
+    display: none;
 }
 
 .pitch-panel-header {
@@ -728,12 +726,15 @@
 }
 
 .pitch-panel-content {
-    padding: 16px 20px;
-    display: none;
+    max-height: 0;
+    overflow: hidden;
+    padding: 0 20px;
+    transition: max-height 0.3s ease;
 }
 
 .pitch-panel.visible .pitch-panel-content {
-    display: block;
+    max-height: 2000px;
+    padding: 16px 20px;
 }
 
 .pitch-chart-scroll {

@@ -320,6 +320,7 @@ export function clearSelection() {
     const resultsPanel = document.getElementById('results-panel-foldable');
     if (resultsPanel) {
         resultsPanel.classList.remove('visible');
+        resultsPanel.classList.add('hidden');
         resultsPanel.setAttribute('data-folded', 'true');
         const icon = document.getElementById('results-panel-toggle-icon');
         if (icon) icon.textContent = '▼';
@@ -330,6 +331,7 @@ export function clearSelection() {
     const pitchPanel = document.getElementById('pitch-panel');
     if (pitchPanel) {
         pitchPanel.classList.remove('visible');
+        pitchPanel.classList.add('hidden');
         pitchPanel.setAttribute('data-folded', 'true');
         const icon = document.getElementById('pitch-panel-toggle-icon');
         if (icon) icon.textContent = '▼';
@@ -362,6 +364,7 @@ export async function onSongChange() {
         const resultsPanel = document.getElementById('results-panel-foldable');
         if (resultsPanel) {
             resultsPanel.classList.remove('visible');
+            resultsPanel.classList.add('hidden');
             resultsPanel.setAttribute('data-folded', 'true');
             const icon = document.getElementById('results-panel-toggle-icon');
             if (icon) icon.textContent = '▼';
@@ -372,6 +375,7 @@ export async function onSongChange() {
         const pitchPanel = document.getElementById('pitch-panel');
         if (pitchPanel) {
             pitchPanel.classList.remove('visible');
+            pitchPanel.classList.add('hidden');
             pitchPanel.setAttribute('data-folded', 'true');
             const icon = document.getElementById('pitch-panel-toggle-icon');
             if (icon) icon.textContent = '▼';
@@ -947,6 +951,7 @@ export function startPractice() {
     const resultsPanel = document.getElementById('results-panel-foldable');
     if (resultsPanel) {
         resultsPanel.classList.remove('visible');
+        resultsPanel.classList.add('hidden');
         resultsPanel.setAttribute('data-folded', 'true');
         const icon = document.getElementById('results-panel-toggle-icon');
         if (icon) icon.textContent = '▼';
@@ -957,6 +962,7 @@ export function startPractice() {
     const pitchPanel = document.getElementById('pitch-panel');
     if (pitchPanel) {
         pitchPanel.classList.remove('visible');
+        pitchPanel.classList.add('hidden');
         pitchPanel.setAttribute('data-folded', 'true');
         const icon = document.getElementById('pitch-panel-toggle-icon');
         if (icon) icon.textContent = '▼';
@@ -1040,6 +1046,7 @@ export function interruptPractice() {
     const resultsPanel = document.getElementById('results-panel-foldable');
     if (resultsPanel) {
         resultsPanel.classList.remove('visible');
+        resultsPanel.classList.add('hidden');
         resultsPanel.setAttribute('data-folded', 'true');
         const icon = document.getElementById('results-panel-toggle-icon');
         if (icon) icon.textContent = '▼';
@@ -1050,6 +1057,7 @@ export function interruptPractice() {
     const pitchPanel = document.getElementById('pitch-panel');
     if (pitchPanel) {
         pitchPanel.classList.remove('visible');
+        pitchPanel.classList.add('hidden');
         pitchPanel.setAttribute('data-folded', 'true');
         const icon = document.getElementById('pitch-panel-toggle-icon');
         if (icon) icon.textContent = '▼';
@@ -1261,6 +1269,7 @@ function updateAnalysisResultsUI(vowelResult, basicResult) {
     // 展開音高準度面板（位於分數面板之下，水平滾動）
     const pitchPanel = document.getElementById('pitch-panel');
     if (pitchPanel) {
+        pitchPanel.classList.remove('hidden');
         pitchPanel.classList.add('visible');
         pitchPanel.setAttribute('data-folded', 'false');
         const toggleIcon = document.getElementById('pitch-panel-toggle-icon');
@@ -1293,6 +1302,7 @@ function updateAnalysisResultsUI(vowelResult, basicResult) {
         if (durationEl) durationEl.textContent = avgDurationDev.toFixed(3);
         
         // 展開面板
+        resultsPanel.classList.remove('hidden');
         resultsPanel.classList.add('visible');
         resultsPanel.setAttribute('data-folded', 'false');
         const toggleIcon = document.getElementById('results-panel-toggle-icon');
