@@ -568,13 +568,14 @@ export function drawPitchDeviationChart(noteComparisons, container) {
     xLabel.textContent = "時間 (秒)";
     svg.appendChild(xLabel);
     
+    // Y 軸標籤 — 垂直置中 (avoid clipping the rotated label above the SVG viewport)
     const yLabel = document.createElementNS(svgNS, "text");
-    yLabel.setAttribute("x", 8);
-    yLabel.setAttribute("y", 20);
+    yLabel.setAttribute("x", 10);
+    yLabel.setAttribute("y", centerY);
     yLabel.setAttribute("text-anchor", "middle");
     yLabel.setAttribute("fill", "#888");
     yLabel.setAttribute("font-size", "12");
-    yLabel.setAttribute("transform", "rotate(-90, 8, 20)");
+    yLabel.setAttribute("transform", "rotate(-90, 10, " + centerY + ")");
     yLabel.textContent = "音分偏差";
     svg.appendChild(yLabel);
     
