@@ -108,6 +108,17 @@ go run cmd/server/main.go
 go run cmd/test_server/main.go
 ```
 
+> **HTTPS 支援**
+>
+> 測試伺服器預設會在 `tls_test/server.crt` 和 `tls_test/server.key` 啟用 HTTPS，
+> 監聽埠 `:18443`。憑證主題為 `vocalistCP.ddns.net`（SAN 含 `localhost` 與 `127.0.0.1`），
+> 可透過 DDNS 存取 `https://vocalistCP.ddns.net:18443`。
+>
+> 可用的環境變數：
+> - `TEST_TLS_CERT` / `TEST_TLS_KEY` — TLS 憑證與私鑰路徑
+> - `TEST_HTTPS_PORT` — HTTPS 監聽埠（預設 `:18443`）
+> - `TEST_REDIRECT_HTTP_TO_HTTPS=true` — 啟用 HTTP→HTTPS 重定向（預設關閉）
+
 > **正式伺服器** 預設 admin 帳號為 `admin@localhost` / `admin1234`（由 MemoryStore 自動 seed）。
 > 可透過命令列參數覆蓋 admin 憑證：
 > ```bash

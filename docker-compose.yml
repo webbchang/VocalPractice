@@ -14,6 +14,7 @@ services:
       # - DATABASE_URL=postgres://vocaluser:vocalpass@db:5432/vocalpractice
       - UPLOAD_DIR=/app/uploads
       # HTTPS configuration - set TLS_CERT and TLS_KEY to enable HTTPS
+      # For local testing, the self-signed cert in ./tls_test is valid for vocalistCP.ddns.net
       # - TLS_CERT=/app/tls/server.crt
       # - TLS_KEY=/app/tls/server.key
       # - HTTPS_PORT=:8443
@@ -22,6 +23,8 @@ services:
       - uploads_data:/app/uploads
       # Mount TLS certificates for HTTPS (uncomment when using HTTPS)
       # - ./tls:/app/tls:ro
+      # For local test server, mount tls_test certs:
+      # - ./tls_test:/app/tls_test:ro
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]

@@ -40,7 +40,13 @@ func main() {
 
 	// HTTPS configuration via environment variables
 	tlsCert := os.Getenv("TEST_TLS_CERT")
+	if tlsCert == "" {
+		tlsCert = "./tls_test/server.crt"
+	}
 	tlsKey := os.Getenv("TEST_TLS_KEY")
+	if tlsKey == "" {
+		tlsKey = "./tls_test/server.key"
+	}
 	httpsPort := os.Getenv("TEST_HTTPS_PORT")
 	if httpsPort == "" {
 		httpsPort = ":18443"
