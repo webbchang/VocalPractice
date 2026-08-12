@@ -1,5 +1,6 @@
 # Build artifacts
 snapshot/snapshot
+bin/
 
 # Uploads
 uploads/

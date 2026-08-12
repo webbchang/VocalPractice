@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"math"
 )
 
@@ -161,9 +160,9 @@ func (v *VowelConsonantSeparator) detectVowelInWindow(window []float64, sampleRa
 	// - Higher energy stability
 	isVowel := spectralCentroid < 2000 && zcr < 0.3 && energyStability > 0.5
 	if !isVowel {
-		fmt.Printf("[DEBUG]   Vowel rejected in window: spectralCentroid=%.1f (need <2000), zcr=%.3f (need <0.3), energyStability=%.3f (need >0.5)\n", spectralCentroid, zcr, energyStability)
+		// fmt.Printf("[DEBUG]   Vowel rejected in window: spectralCentroid=%.1f (need <2000), zcr=%.3f (need <0.3), energyStability=%.3f (need >0.5)\n", spectralCentroid, zcr, energyStability)
 	} else {
-		fmt.Printf("[DEBUG]   Vowel detected in window: spectralCentroid=%.1f, zcr=%.3f, energyStability=%.3f\n", spectralCentroid, zcr, energyStability)
+		// fmt.Printf("[DEBUG]   Vowel detected in window: spectralCentroid=%.1f, zcr=%.3f, energyStability=%.3f\n", spectralCentroid, zcr, energyStability)
 	}
 	return isVowel
 }

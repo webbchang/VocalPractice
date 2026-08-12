@@ -31,7 +31,7 @@ function generateReferenceData() {
         start,
         end
     );
-    console.log(`Reference data: ${state.referenceNotes.length} notes from track ${parsedTrackIndex} [${start.toFixed(2)}-${end.toFixed(2)}]`);
+        // console.log(`Reference data: ${state.referenceNotes.length} notes from track ${parsedTrackIndex} [${start.toFixed(2)}-${end.toFixed(2)}]`);
 }
 
 /**
@@ -629,7 +629,7 @@ function startMediaRecorder() {
             if (audioTracks.length === 0) {
                 throw new Error('No audio input device found');
             }
-            console.log(`Microphone access granted, using device: ${audioTracks[0].label || 'Unknown'}`);
+        // console.log(`Microphone access granted, using device: ${audioTracks[0].label || 'Unknown'}`);
             
             // Use the shared AudioContext from audio.js
             audioContext = getAudioCtx();
@@ -655,16 +655,16 @@ function startMediaRecorder() {
                     const recentSamples = input.slice(Math.max(0, input.length - 10));
                     const hasNonZero = recentSamples.some(sample => Math.abs(sample) > 0.001);
                     const avgLevel = recentSamples.reduce((sum, sample) => sum + Math.abs(sample), 0) / recentSamples.length;
-                    console.log(`Audio buffer: ${audioBuffer.length} samples, recent non-zero: ${hasNonZero}, avg level: ${avgLevel.toFixed(4)}, recent samples: [${recentSamples.map(x => x.toFixed(3)).join(', ')}]`);
+        // console.log(`Audio buffer: ${audioBuffer.length} samples, recent non-zero: ${hasNonZero}, avg level: ${avgLevel.toFixed(4)}, recent samples: [${recentSamples.map(x => x.toFixed(3)).join(', ')}]`);
                 }
                 // Log the first buffer to see if we are getting data
                 if (audioBuffer.length === 0) {
-                    console.log('First audio buffer received:', input.length, 'samples');
-                    console.log('First 10 samples:', input.slice(0, 10));
+        // console.log('First audio buffer received:', input.length, 'samples');
+        // console.log('First 10 samples:', input.slice(0, 10));
                     // Also check min/max in first buffer
                     const minVal = Math.min(...input);
                     const maxVal = Math.max(...input);
-                    console.log('First buffer range: [', minVal.toFixed(4), ',', maxVal.toFixed(4), ']');
+        // console.log('First buffer range: [', minVal.toFixed(4), ',', maxVal.toFixed(4), ']');
                 }
                 // Copy samples to our buffer
                 for (let i = 0; i < input.length; i++) {
@@ -677,7 +677,7 @@ function startMediaRecorder() {
             scriptProcessorNode.connect(audioContext.destination);
             
             // Start processing (implicitly starts when connected)
-            console.log('Audio recording started successfully');
+        // console.log('Audio recording started successfully');
         })
         .catch(err => {
             console.error('Failed to start recording:', err);
@@ -702,7 +702,7 @@ export function stopMediaRecorder() {
         // Stop any media stream tracks (cleanup)
         if (mediaStream) {
             mediaStream.getTracks().forEach(track => {
-                console.log(`Stopping media track: ${track.kind}`);
+        // console.log(`Stopping media track: ${track.kind}`);
                 track.stop();
             });
             mediaStream = null;
@@ -712,7 +712,7 @@ export function stopMediaRecorder() {
          if (audioBuffer.length > 0) {
             // Use AudioContext sample rate if available, otherwise default to 44100
             const sampleRate = audioContext ? audioContext.sampleRate : 44100;
-            console.log('Encoding WAV: sample rate', sampleRate, 'buffer length', audioBuffer.length);
+        // console.log('Encoding WAV: sample rate', sampleRate, 'buffer length', audioBuffer.length);
             
             // Trim count-in (3-beat lead-in) from the beginning of the recording
             let bufferToEncode = audioBuffer;
@@ -720,7 +720,7 @@ export function stopMediaRecorder() {
                 const trimSamples = Math.floor(state.recordingTrimOffset * sampleRate);
                 if (trimSamples > 0 && trimSamples < audioBuffer.length) {
                     bufferToEncode = audioBuffer.slice(trimSamples);
-                    console.log('Trimmed count-in:', trimSamples, 'samples (' + state.recordingTrimOffset.toFixed(3) + 's), remaining:', bufferToEncode.length, 'samples');
+        // console.log('Trimmed count-in:', trimSamples, 'samples (' + state.recordingTrimOffset.toFixed(3) + 's), remaining:', bufferToEncode.length, 'samples');
                 }
             }
             
@@ -735,17 +735,17 @@ export function stopMediaRecorder() {
             // Find peak amplitude (use reduce instead of Math.max with spread to avoid call stack limit)
             const peak = bufferToEncode.reduce((max, sample) => Math.abs(sample) > max ? Math.abs(sample) : max, 0);
             
-            console.log(`Audio analysis: ${nonZeroCount}/${bufferToEncode.length} non-zero samples (${percentNonZero.toFixed(2)}%), RMS: ${rms.toFixed(6)}, Peak: ${peak.toFixed(6)}`);
+        // console.log(`Audio analysis: ${nonZeroCount}/${bufferToEncode.length} non-zero samples (${percentNonZero.toFixed(2)}%), RMS: ${rms.toFixed(6)}, Peak: ${peak.toFixed(6)}`);
             
             if (percentNonZero < 0.1) {
                 console.warn('Warning: Audio appears to be mostly silence - check microphone permissions and input');
             }
             
             recordedWavBlob = encodeWAV(new Float32Array(bufferToEncode), sampleRate);
-            console.log('Encoded WAV blob size:', recordedWavBlob.size, 'bytes');
+        // console.log('Encoded WAV blob size:', recordedWavBlob.size, 'bytes');
             audioBuffer = []; // Clear buffer after encoding
         } else {
-            console.log('No audio data to encode');
+        // console.log('No audio data to encode');
         }
         
         resolve();
@@ -886,18 +886,18 @@ export function isPracticeActivityActive() {
 export function getRecordedAudioBase64() {
     return new Promise((resolve, reject) => {
         if (!recordedWavBlob) {
-            console.log('No recorded WAV blob available');
+        // console.log('No recorded WAV blob available');
             resolve(null);
             return;
         }
         
-        console.log('Converting WAV blob to base64, size:', recordedWavBlob.size, 'bytes');
+        // console.log('Converting WAV blob to base64, size:', recordedWavBlob.size, 'bytes');
         
         const reader = new FileReader();
         reader.onloadend = () => {
             // Remove the data:audio/wav;base64, prefix if present
             const base64String = (reader.result || '').toString().split(',')[1] || '';
-            console.log('Base64 conversion complete, length:', base64String.length, 'characters');
+        // console.log('Base64 conversion complete, length:', base64String.length, 'characters');
             resolve(base64String);
         };
         reader.onerror = (err) => {
@@ -943,7 +943,7 @@ export function startPractice() {
             </div>
         </div>
     `;
-    console.log('Reference notes for comparison:', referenceNotes);
+        // console.log('Reference notes for comparison:', referenceNotes);
 
     // 清除之前的練習狀態
     cleanupPractice(true);
@@ -1104,10 +1104,10 @@ export async function analyzeAndSubmitRecording() {
         const sampleRate = audioContext ? audioContext.sampleRate : 44100;
         
         // Log what we're about to send to the API
-        console.log('Sending to API - audio length:', audioBase64.length, 'base64 chars, reference notes:', referenceNotes.length);
-        console.log('First reference note sample:', referenceNotes[0]);
-        console.log('Recording start time offset:', state.recordingStartTime);
-        console.log('Recording trim offset:', state.recordingTrimOffset);
+        // console.log('Sending to API - audio length:', audioBase64.length, 'base64 chars, reference notes:', referenceNotes.length);
+        // console.log('First reference note sample:', referenceNotes[0]);
+        // console.log('Recording start time offset:', state.recordingStartTime);
+        // console.log('Recording trim offset:', state.recordingTrimOffset);
         
         // 共用的請求 body
         const commonBody = {
@@ -1130,8 +1130,8 @@ export async function analyzeAndSubmitRecording() {
         ]);
         
         // 日誌記錄
-        console.log('Analysis API (vowel-filtered) response:', vowelResult);
-        console.log('Analysis API (basic) response:', basicResult);
+        // console.log('Analysis API (vowel-filtered) response:', vowelResult);
+        // console.log('Analysis API (basic) response:', basicResult);
         
         // 擷取結果（如果請求失敗則為 null）
         const vowelAssessmentResult = vowelResult.status === 'fulfilled' ? vowelResult.value : null;
@@ -1236,7 +1236,7 @@ function normalizeNoteComparison(noteComparison) {
  */
 function updateAnalysisResultsUI(vowelResult, basicResult) {
     // 打印完整的 API 回應結果進行診斷
-    console.log('Updating analysis results UI with:', { vowelResult, basicResult });
+        // console.log('Updating analysis results UI with:', { vowelResult, basicResult });
     
     // 正規化兩種結果
     const vowelNorm = normalizeResult(vowelResult);
@@ -1253,7 +1253,7 @@ function updateAnalysisResultsUI(vowelResult, basicResult) {
     const score = primary.score;
     const normalizedNoteComparison = normalizeNoteComparison(primary.noteComparison);
     
-    console.log('Normalized values - Score:', score, 'Matched:', matchedNotes + '/' + totalNotes, 'NoteComparison length:', normalizedNoteComparison.length);
+        // console.log('Normalized values - Score:', score, 'Matched:', matchedNotes + '/' + totalNotes, 'NoteComparison length:', normalizedNoteComparison.length);
     
     // 更新圖表區域顯示分數儀表（僅分數，音高準度移至獨立折疊面板）
     const chartArea = document.getElementById('chart-area');

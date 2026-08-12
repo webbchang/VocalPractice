@@ -448,7 +448,14 @@ type Report struct {
 
 func main() {
 	midiPath := "uploads_test/1c766971-eb04-4363-9284-ab2885f0406d.mid"
-	wavPath := "debug_uploads/20260810_155328_user_recording.wav"
+	wavPath := ""
+	if len(os.Args) > 1 {
+		wavPath = os.Args[1]
+	}
+	if wavPath == "" {
+		fmt.Println("Usage: midi_wav_compare <wav-file-path>")
+		os.Exit(1)
+	}
 
 	// 1. 讀取 MIDI
 	midiData, err := os.ReadFile(midiPath)

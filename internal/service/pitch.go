@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"math"
 	"sort"
 )
@@ -33,7 +32,7 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 	var currentNote *MIDINoteForTest
 
 	// Diagnostic counters
-	var totalWindows, silenceSkips, lowCorrSkips, rangeSkips, shortNoteSkips, detectedCount int
+	var totalWindows, silenceSkips, lowCorrSkips, rangeSkips, shortNoteSkips int
 
 	for start := 0; start+windowSize < len(samples); start += hopSize {
 		end := start + windowSize
@@ -100,9 +99,9 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 			lowCorrSkips++
 			if start < hopSize*10 { // Log first few windows for debugging
 				if maxCorr < float64(correlationThreshold) {
-					fmt.Printf("[DEBUG] Pitch corr too low at start=%d: rms=%.4f, maxCorr=%.3f < %.1f threshold\n", start, rms, maxCorr, correlationThreshold)
+					// fmt.Printf("[DEBUG] Pitch corr too low at start=%d: rms=%.4f, maxCorr=%.3f < %.1f threshold\n", start, rms, maxCorr, correlationThreshold)
 				} else if bestPeriod == 0 {
-					fmt.Printf("[DEBUG] Pitch no period at start=%d: rms=%.4f, maxCorr=%.3f\n", start, rms, maxCorr)
+					// fmt.Printf("[DEBUG] Pitch no period at start=%d: rms=%.4f, maxCorr=%.3f\n", start, rms, maxCorr)
 				}
 			}
 			if currentNote != nil {
@@ -120,7 +119,7 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 		if roundedPitch < 40 || roundedPitch > 93 {
 			rangeSkips++
 			if start < hopSize*10 {
-				fmt.Printf("[DEBUG] Pitch out of range at start=%d: freq=%.1fHz, midi=%.1f (rounded=%d), skipped\n", start, freq, midiNote, roundedPitch)
+				// fmt.Printf("[DEBUG] Pitch out of range at start=%d: freq=%.1fHz, midi=%.1f (rounded=%d), skipped\n", start, freq, midiNote, roundedPitch)
 			}
 			continue
 		}
@@ -176,9 +175,8 @@ func detectPitchGo(samples []float64, sampleRate int) []MIDINoteForTest {
 		}
 	}
 
-	detectedCount = len(filtered)
-	fmt.Printf("[DEBUG] detectPitchGo: totalWindows=%d, silenceSkips=%d, lowCorrSkips=%d, rangeSkips=%d, rawNotes=%d, shortNoteSkips=%d, finalFiltered=%d\n",
-		totalWindows, silenceSkips, lowCorrSkips, rangeSkips, len(notes), shortNoteSkips, detectedCount)
+	// fmt.Printf("[DEBUG] detectPitchGo: totalWindows=%d, silenceSkips=%d, lowCorrSkips=%d, rangeSkips=%d, rawNotes=%d, shortNoteSkips=%d, finalFiltered=%d\n",
+	// 	totalWindows, silenceSkips, lowCorrSkips, rangeSkips, len(notes), shortNoteSkips, detectedCount)
 
 	return filtered
 }
