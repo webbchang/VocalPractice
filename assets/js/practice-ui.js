@@ -584,13 +584,14 @@ export function drawPitchDeviationChart(noteComparisons, container) {
 
 /**
  * 繪製音符比對表格
+ * 將音符按所選樂句（song phrase）分組，每組可獨立折疊展開
  * @param {Array} noteComparisons - 音符比較陣列
  * @param {HTMLElement} container - 容器元素
  */
 export function drawNoteComparisonTable(noteComparisons, container) {
     // 清空容器
     container.innerHTML = '';
-    
+
     if (!noteComparisons || noteComparisons.length === 0) {
         const noData = document.createElement('div');
         noData.textContent = '無音符比對資料';
@@ -600,17 +601,115 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         container.appendChild(noData);
         return;
     }
-    
+
+    // 依選取樂句分組（長篇練習時可摺疊檢視），不屬於任何樂句的音符直接略過
+    const groups = groupNotesByPhrase(noteComparisons);
+    if (groups.length === 0) {
+        const noData = document.createElement('div');
+        noData.textContent = '無音符比對資料';
+        noData.style.textAlign = 'center';
+        noData.style.padding = '20px';
+        noData.style.color = '#888';
+        container.appendChild(noData);
+        return;
+    }
+    groups.forEach((group, index) => {
+        container.appendChild(buildNoteGroup(group, index));
+    });
+}
+
+/**
+ * 將音符比對資料依照所選樂句的時間範圍分組
+ * @param {Array} noteComparisons
+ * @returns {Array<{id, title, startTime, endTime, notes: Array}>}
+ */
+function groupNotesByPhrase(noteComparisons) {
+    const phrases = (state.selectedPhrasesData || []).filter(p => p && p.start_time != null && p.end_time != null);
+    const groups = [];
+
+    for (const note of noteComparisons) {
+        const start = note.ref_start ?? note.RefStart ?? 0;
+        for (const p of phrases) {
+            if (start >= p.start_time && start <= p.end_time) {
+                let g = groups.find(g => g.id === p.id);
+                if (!g) {
+                    g = { id: p.id, title: p.title || '樂句', startTime: p.start_time, endTime: p.end_time, notes: [] };
+                    groups.push(g);
+                }
+                g.notes.push(note);
+                break;
+            }
+        }
+    }
+
+    // 依樂句時間順序排序
+    groups.sort((a, b) => a.startTime - b.startTime);
+
+    return groups;
+}
+
+/**
+ * 建立單一樂句的可折疊群組（含標題與音符表格）
+ */
+function buildNoteGroup(group, index) {
+    const wrap = document.createElement('div');
+    wrap.className = 'note-group';
+    // 預設第一組展開，其餘折疊，避免長篇練習時結果過長
+    const expanded = index === 0;
+    wrap.setAttribute('data-folded', expanded ? 'false' : 'true');
+
+    const matched = group.notes.filter(n => {
+        const s = n.match_status ?? n.MatchStatus ?? '';
+        return typeof s === 'string' ? s.toLowerCase() === 'matched' : false;
+    }).length;
+
+    const header = document.createElement('div');
+    header.className = 'note-group-header';
+    header.setAttribute('onclick', 'window.toggleNoteGroup(this)');
+    header.innerHTML = `
+        <span class="note-group-toggle">${expanded ? '▲' : '▼'}</span>
+        <span class="note-group-title">${escapeHtml(group.title)}</span>
+        <span class="note-group-summary">${matched}/${group.notes.length} 音符</span>
+    `;
+
+    const body = document.createElement('div');
+    body.className = 'note-group-body';
+    body.appendChild(buildNoteTable(group.notes));
+
+    wrap.appendChild(header);
+    wrap.appendChild(body);
+    return wrap;
+}
+
+/**
+ * 折疊/展開單一樂句群組
+ * @param {HTMLElement} headerEl - 被點擊的群組標題元素
+ */
+export function toggleNoteGroup(headerEl) {
+    const group = headerEl.closest('.note-group');
+    if (!group) return;
+    const isFolded = group.getAttribute('data-folded') === 'true';
+    group.setAttribute('data-folded', isFolded ? 'false' : 'true');
+    const icon = group.querySelector('.note-group-toggle');
+    if (icon) icon.textContent = isFolded ? '▲' : '▼';
+}
+
+/**
+ * 建立音符比對表格（含標題列與所有音符列）
+ * @param {Array} notes
+ * @returns {HTMLTableElement}
+ */
+function buildNoteTable(notes) {
     // 創建表格
     const table = document.createElement('table');
     table.style.width = '100%';
     table.style.borderCollapse = 'collapse';
     table.style.margin = '10px 0';
-    
+
     // 標題列
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
-    
+
     const headers = ['音符', '開始時間', '結束時間', '狀態', '音高偏差 (cent)', '時長偏差 (秒)'];
     headers.forEach(headerText => {
         const th = document.createElement('th');
@@ -623,16 +722,16 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         th.style.fontSize = '13px';
         headerRow.appendChild(th);
     });
-    
+
     thead.appendChild(headerRow);
     table.appendChild(thead);
-    
+
     // 身體
     const tbody = document.createElement('tbody');
-    
-    noteComparisons.forEach((note, index) => {
+
+    notes.forEach((note) => {
         const tr = document.createElement('tr');
-        
+
         // 音符名稱
         const noteNameTd = document.createElement('td');
         const refPitch = note.ref_pitch ?? note.RefPitch ?? 0;
@@ -642,7 +741,7 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         noteNameTd.style.color = '#ddd';
         noteNameTd.style.fontSize = '13px';
         tr.appendChild(noteNameTd);
-        
+
         // 開始時間
         const startTd = document.createElement('td');
         const refStart = note.ref_start ?? note.RefStart ?? 0;
@@ -652,7 +751,7 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         startTd.style.color = '#ddd';
         startTd.style.fontSize = '13px';
         tr.appendChild(startTd);
-        
+
         // 結束時間
         const endTd = document.createElement('td');
         const refEnd = note.ref_end ?? note.RefEnd ?? 0;
@@ -662,7 +761,7 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         endTd.style.color = '#ddd';
         endTd.style.fontSize = '13px';
         tr.appendChild(endTd);
-        
+
         // 狀態
         const statusTd = document.createElement('td');
         const matchStatus = note.match_status ?? note.MatchStatus ?? 'unknown';
@@ -680,7 +779,7 @@ export function drawNoteComparisonTable(noteComparisons, container) {
             statusTd.style.fontWeight = 'bold';
         }
         tr.appendChild(statusTd);
-        
+
         // 音高偏差
         const pitchTd = document.createElement('td');
         const pitchDev = note.pitch_deviation_cents ?? note.PitchDeviationCents ?? 0;
@@ -695,7 +794,7 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         pitchTd.style.color = matchStatusLower === 'missed' ? '#888' : (Math.abs(pitchDev) < 20 ? '#4CAF50' : '#F44336');
         pitchTd.style.fontSize = '13px';
         tr.appendChild(pitchTd);
-        
+
         // 時長偏差
         const durationTd = document.createElement('td');
         const durationDev = note.duration_deviation_sec ?? note.DurationDeviationSec ?? 0;
@@ -710,12 +809,12 @@ export function drawNoteComparisonTable(noteComparisons, container) {
         durationTd.style.color = matchStatusLower === 'missed' ? '#888' : (Math.abs(durationDev) < 0.1 ? '#4CAF50' : '#F44336');
         durationTd.style.fontSize = '13px';
         tr.appendChild(durationTd);
-        
+
         tbody.appendChild(tr);
     });
-    
+
     table.appendChild(tbody);
-    container.appendChild(table);
+    return table;
 }
 
 /**

@@ -1351,6 +1351,8 @@ function updateAnalysisResultsUI(vowelResult, basicResult) {
  * 渲染單張評估卡片
  */
 function renderAssessmentCard(norm, label, normalizedNoteComparison) {
+    const tableId = label === '母音過濾' ? 'vowel' : 'basic';
+
     if (!norm) {
         return `
             <div class="result-card">
@@ -1391,8 +1393,8 @@ function renderAssessmentCard(norm, label, normalizedNoteComparison) {
                 </div>
             </div>
             <div class="result-card-table">
-                <h4>音符比對</h4>
-                <div id="note-table-${label === '母音過濾' ? 'vowel' : 'basic'}"></div>
+                <h4>音符比對（按樂句分組）</h4>
+                <div id="note-table-${tableId}"></div>
             </div>
         </div>
     `;
