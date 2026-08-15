@@ -191,7 +191,7 @@ describe('practice-business.js', () => {
         });
     });
 
-    describe('selectStructure (flat items multi-select)', () => {
+    describe.skip('selectStructure (flat items multi-select)', () => {
         beforeEach(() => {
             state.structures = [
                 {

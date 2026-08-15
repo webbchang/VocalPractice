@@ -7,9 +7,13 @@ const state = {
     structures: [],
     selectedTrackId: null,
     selectedAccompanimentTrackIds: [],
+
+    // 選取結果（由 selection.js 計算）
     selectedStructure: null, // { id, start, end, title } — section 或合併範圍
-    selectedPhraseIds: [],   // 多選的 phrase ID 陣列（連續句子）
+    selectedPhraseIds: [],   // 被選取的 phrase id（含整段選取所涵蓋的 phrase）
     selectedPhrasesData: [], // 對應的 phrase 原始資料（含 lyrics）
+    selectedSectionIds: [],  // 被「整段選取」的 section id（整選，非逐句）
+
     midiData: null,
     parsedNotes: null,
     referenceNotes: null,
@@ -18,10 +22,6 @@ const state = {
     parsedMIDITracks: [],
     isRecording: false,      // 是否正在錄音
     practicePhase: 'idle',   // 'idle' | 'playing_accompaniment' | 'playing_beats' | 'recording'
-
-    // 扁平化選取模式（段落+句子混合連續多選）
-    flatItems: [],           // [{ type: 'section'|'phrase', data: originalObj, section: parentSection }, ...]
-    selectionRange: { from: null, to: null }, // flatItems 的 index 範圍
 
     // Recording timing metadata for note alignment
     recordingStartTime: 0,     // absolute MIDI time corresponding to recording time 0 (after count-in trim)

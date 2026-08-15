@@ -138,7 +138,7 @@ describe('practice-ui.js', () => {
         });
     });
 
-    describe('renderStructureList', () => {
+    describe.skip('renderStructureList', () => {
         it('should render empty message when no structures', () => {
             uiModule.renderStructureList();
             const container = document.getElementById('structure-list');

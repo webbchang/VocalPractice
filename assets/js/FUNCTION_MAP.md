@@ -93,14 +93,35 @@
 | 匯出名稱 | 參數 | 回傳值 | 說明 |
 |----------|------|--------|------|
 | `selectTrack` | `trackId: string` | `Promise<void>` | 選取聲部，載入對應結構 |
-| `selectStructure` | `id: string` | `void` | 選取段落/句子，產生參考資料 |
 | `onSongChange` | 無 | `Promise<void>` | 歌曲選擇變更處理（載入歌曲、MIDI、音軌、結構） |
 | `toggleAccompanimentTrack` | `trackId: string` | `void` | 切換伴唱聲部選取 |
 | `startPractice` | 無 | `void` | 開始練習（設定 UI + 自動播放） |
 
-**內部函式（不匯出）：** `determineParsedTrackIndex()`, `generateReferenceData()`, `updateSelectionUI()`  
+**內部函式（不匯出）：** `determineParsedTrackIndex()`  （`generateReferenceData()` 已移至 selection.js）
 **依賴：** `state.js`, `api.js`, `audio.js`, `window.SongDataExtractor`, `practice-ui.js`（動態 import）  
 **使用端：** `user-practice.html`（經 window 掛載）
+
+---
+
+## 6.1 `selection.js`（ES Module — 選取商業邏輯）
+
+| 匯出名稱 | 參數 | 回傳值 | 說明 |
+|----------|------|--------|------|
+| `selectSection` | `id: string` | `void` | 整段（section）選取切換，包含其下所有句子 |
+| `selectPhrase` | `id: string` | `void` | 單句（phrase）選取切換，獨立切換 |
+| `resetSelection` | 無 | `void` | 清除選取狀態 |
+| `generateReferenceData` | 無 | `void` | 由選取範圍產生參考音符 |
+
+**依賴：** `state.js`, `selection-ui.js`（refreshSelectionUI）, `window.SongDataExtractor`
+
+## 6.2 `selection-ui.js`（ES Module — 選取 UI 渲染）
+
+| 匯出名稱 | 參數 | 回傳值 | 說明 |
+|----------|------|--------|------|
+| `renderStructureList` | 無 | `void` | 渲染「段落與句子」巢狀清單 |
+| `refreshSelectionUI` | 無 | `void` | 選取後刷新範圍資訊、清單與歌詞 |
+
+**依賴：** `state.js`, `practice-ui.js`（renderLyricsPanel）
 
 ---
 
@@ -111,8 +132,6 @@
 | `updatePlayBtn` | 無 | `void` | 更新播放按鈕圖示（播放/暫停切換） |
 | `renderVocalTracks` | `tracks: Array` | `void` | 渲染主聲部 radio list |
 | `renderAccompanimentTracks` | `tracks: Array` | `void` | 渲染伴唱聲部 checkbox list |
-| `renderStructureList` | 無 | `void` | 渲染段落結構列表 |
-| `updateSelectionUI` | 無 | `void` | 更新選取範圍的 UI 顯示 |
 | `clearSelection` | 無 | `void` | 清除當前選取 |
 | `switchTab` | `el: Element, tab: string` | `void` | 切換視覺化分頁 |
 | `logout` | 無 | `void` | 登出（清除 cookie + 跳轉） |

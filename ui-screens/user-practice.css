@@ -969,3 +969,12 @@
             font-style: italic;
             padding: 0 8px 8px 8px;
         }
+
+/* 段落/句子選取：巢狀群組 */
+.structure-group { margin-bottom: 8px; }
+.structure-children {
+    margin-left: 16px;
+    padding-left: 12px;
+    border-left: 2px solid #2c3e50;
+}
+.structure-option.phrase { padding-left: 12px; }

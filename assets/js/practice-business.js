@@ -3,6 +3,7 @@
 // 不直接操作 DOM（UI 操作委託給 practice-ui.js）
 
 import state from './state.js';
+import { resetSelection } from './selection.js';
 import { api, loadMIDI, loadStructures } from './api.js';
 import { getAudioCtx, playRange, playRangeDelayed, stopPlayback, stopReplay, getIsReplaying, setReplayAudio, scheduleBeats, AudioProcess, stopAudioProcess } from './audio.js';
 
@@ -17,121 +18,7 @@ function determineParsedTrackIndex() {
     return -1;
 }
 
-function generateReferenceData() {
-    const { parsedNotes, selectedStructure, parsedTrackIndex } = state;
-    if (!parsedNotes || !selectedStructure || parsedTrackIndex < 0) {
-        state.referenceNotes = null;
-        return;
-    }
-    const start = selectedStructure.start;
-    const end = selectedStructure.end;
-    state.referenceNotes = window.SongDataExtractor.extractReferenceNotes(
-        parsedNotes,
-        parsedTrackIndex,
-        start,
-        end
-    );
-        // console.log(`Reference data: ${state.referenceNotes.length} notes from track ${parsedTrackIndex} [${start.toFixed(2)}-${end.toFixed(2)}]`);
-}
 
-/**
- * 從 structures 建立扁平化項目清單
- * 每個 section 和其底下的 phrases 依序排列
- */
-function buildFlatItems() {
-    const items = [];
-    for (const s of state.structures) {
-        items.push({ type: 'section', data: s, section: s });
-        if (s.phrases) {
-            for (const p of s.phrases) {
-                items.push({ type: 'phrase', data: p, section: s });
-            }
-        }
-    }
-    return items;
-}
-
-/**
- * 從 selectionRange 計算合併後的 selectedStructure（start, end, title）
- */
-function computeSelectedStructure() {
-    const { flatItems, selectionRange } = state;
-    const { from, to } = selectionRange;
-    if (from === null || to === null || from > to) {
-        state.selectedStructure = null;
-        state.selectedPhraseIds = [];
-        state.selectedPhrasesData = [];
-        return;
-    }
-
-    const selected = flatItems.slice(from, to + 1);
-    if (selected.length === 0) {
-        state.selectedStructure = null;
-        state.selectedPhraseIds = [];
-        state.selectedPhrasesData = [];
-        return;
-    }
-
-    // 收集所有選取的 phrases（含 section 隱含的 phrases）
-    const allPhrases = [];
-    const allPhraseIds = [];
-    for (const item of selected) {
-        if (item.type === 'phrase') {
-            if (!allPhraseIds.includes(item.data.id)) {
-                allPhraseIds.push(item.data.id);
-                allPhrases.push(item.data);
-            }
-        } else if (item.type === 'section') {
-            // section 含有其下所有 phrases
-            if (item.data.phrases) {
-                for (const p of item.data.phrases) {
-                    if (!allPhraseIds.includes(p.id)) {
-                        allPhraseIds.push(p.id);
-                        allPhrases.push(p);
-                    }
-                }
-            }
-        }
-    }
-
-    // 從選取項目計算 start/end
-    let minStart = Infinity;
-    let maxEnd = -Infinity;
-    for (const item of selected) {
-        const start = item.type === 'section' ? item.data.start_time : item.data.start_time;
-        const end = item.type === 'section' ? item.data.end_time : item.data.end_time;
-        if (start < minStart) minStart = start;
-        if (end > maxEnd) maxEnd = end;
-    }
-
-    if (minStart === Infinity) {
-        state.selectedStructure = null;
-        state.selectedPhraseIds = [];
-        state.selectedPhrasesData = [];
-        return;
-    }
-
-    // 產生 title
-    let title;
-    if (selected.length === 1) {
-        title = selected[0].data.title;
-    } else {
-        const firstTitle = selected[0].data.title;
-        const lastTitle = selected[selected.length - 1].data.title;
-        const count = selected.length;
-        const totalPhrases = allPhrases.length;
-        title = `${firstTitle} ∼ ${lastTitle}（${count}項${totalPhrases > count ? `, ${totalPhrases}句` : ''}）`;
-    }
-
-    state.selectedStructure = { id: from + '-' + to, title, start: minStart, end: maxEnd };
-    state.selectedPhraseIds = allPhraseIds;
-    state.selectedPhrasesData = allPhrases;
-}
-
-/**
- * 收集當前選取範圍的歌詞資料
- * 回傳：{ phrases: [{ title, lyrics }], count: number }
- */
 export function getLyricsForSelection() {
     const { structures, selectedStructure, selectedPhraseIds, selectedPhrasesData } = state;
     const result = { phrases: [], count: 0 };
@@ -180,11 +67,7 @@ export async function selectTrack(trackId) {
     state.selectedTrackId = trackId;
     state.referenceNotes = null;
     state.parsedTrackIndex = determineParsedTrackIndex();
-    state.selectedPhraseIds = [];
-    state.selectedPhrasesData = [];
-    state.flatItems = [];
-    state.selectionRange = { from: null, to: null };
-    // Re-render both vocal and accompaniment track lists
+    resetSelection();
     const { renderVocalTracks, renderAccompanimentTracks } = await import('./practice-ui.js');
     if (state.currentSongFull && state.currentSongFull.tracks) {
         renderVocalTracks(state.currentSongFull.tracks);
@@ -192,166 +75,21 @@ export async function selectTrack(trackId) {
     }
     const structures = await loadStructures(state.currentSongId, trackId);
     state.structures = structures;
-    state.flatItems = buildFlatItems();
-    const { renderStructureList, renderLyricsPanel } = await import('./practice-ui.js');
-    renderStructureList();
-    renderLyricsPanel();
-    
-    // Auto-select first structure if available
-    if (state.flatItems.length > 0) {
-        const firstId = state.flatItems[0].data.id;
-        state.selectionRange = { from: 0, to: 0 };
-        computeSelectedStructure();
-        generateReferenceData();
-        const { renderStructureList: reRender, renderLyricsPanel: reRenderLyrics } = await import('./practice-ui.js');
-        reRender();
-        reRenderLyrics();
-        // Update range info display
-        const { selectedStructure } = state;
-        if (selectedStructure) {
-            const formatTime = (sec) => {
-                if (sec == null) return '0:00';
-                const m = Math.floor(sec / 60);
-                const s = Math.floor(sec % 60);
-                return m + ':' + s.toString().padStart(2, '0');
-            };
-            const rangeInfo = document.getElementById('range-info');
-            if (rangeInfo) {
-                rangeInfo.textContent = `🎯 ${selectedStructure.title}：${formatTime(selectedStructure.start)} - ${formatTime(selectedStructure.end)}`;
-            }
-            const rangeActions = document.getElementById('range-actions');
-            if (rangeActions) {
-                rangeActions.style.display = 'flex';
-            }
-            const currentRangeLabel = document.getElementById('current-range-label');
-            if (currentRangeLabel) {
-                currentRangeLabel.textContent = `${selectedStructure.title} (${formatTime(selectedStructure.start)})`;
-            }
-        }
-    }
-}
-
-/**
- * 選取結構（段落或句子），支援混合連續多選
- * @param {string} id - section 或 phrase 的 id
- */
-export function selectStructure(id) {
-    const { flatItems, selectionRange } = state;
-
-    // 如果 flatItems 還沒建立，先建立
-    if (flatItems.length === 0) {
-        state.flatItems = buildFlatItems();
-    }
-
-    // 在 flatItems 中找到被點選的項目
-    const clickedIdx = flatItems.findIndex(item => item.data.id === id);
-    if (clickedIdx === -1) return;
-
-    const { from, to } = selectionRange;
-
-    // 情況 1: 目前沒有選取 → 選取點選的項目
-    if (from === null || to === null) {
-        state.selectionRange = { from: clickedIdx, to: clickedIdx };
-        computeSelectedStructure();
-        generateReferenceData();
-        updateSelectionUI();
-        return;
-    }
-
-    const minIdx = Math.min(from, to);
-    const maxIdx = Math.max(from, to);
-
-    // 情況 2: 點選的項目已在選取範圍內
-    if (clickedIdx >= minIdx && clickedIdx <= maxIdx) {
-        // 點選邊緣 → 縮減
-        if (clickedIdx === minIdx) {
-            state.selectionRange = { from: minIdx + 1, to: maxIdx };
-        } else if (clickedIdx === maxIdx) {
-            state.selectionRange = { from: minIdx, to: maxIdx - 1 };
-        } else {
-            // 點選中間 → 重設為只選該項
-            state.selectionRange = { from: clickedIdx, to: clickedIdx };
-        }
+    const selection = await import('./selection.js');
+    if (state.structures.length > 0) {
+        await selection.selectSection(state.structures[0].id);
     } else {
-        // 情況 3: 在範圍外 → 擴展
-        if (clickedIdx < minIdx) {
-            state.selectionRange = { from: clickedIdx, to: maxIdx };
-        } else {
-            state.selectionRange = { from: minIdx, to: clickedIdx };
-        }
-    }
-
-    computeSelectedStructure();
-    generateReferenceData();
-    updateSelectionUI();
-}
-
-function updateSelectionUI() {
-    const { selectedStructure } = state;
-    if (selectedStructure) {
-        const formatTime = (sec) => {
-            if (sec == null) return '0:00';
-            const m = Math.floor(sec / 60);
-            const s = Math.floor(sec % 60);
-            return m + ':' + s.toString().padStart(2, '0');
-        };
-        document.getElementById('range-info').textContent =
-            `🎯 ${selectedStructure.title}：${formatTime(selectedStructure.start)} - ${formatTime(selectedStructure.end)}`;
-        document.getElementById('range-actions').style.display = 'flex';
-        document.getElementById('current-range-label').textContent =
-            `${selectedStructure.title} (${formatTime(selectedStructure.start)})`;
-        // re-render structure list to show selection
-        import('./practice-ui.js').then(m => {
-            m.renderStructureList();
-            m.renderLyricsPanel();
-        });
+        const ui = await import('./selection-ui.js');
+        ui.refreshSelectionUI();
     }
 }
 
-export function clearSelection() {
-    state.selectedStructure = null;
-    state.selectedPhraseIds = [];
-    state.selectedPhrasesData = [];
-    state.selectionRange = { from: null, to: null };
-    document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
-    document.getElementById('range-actions').style.display = 'none';
-    document.getElementById('current-range-label').textContent = '未選擇';
-    // 隱藏結果面板
-    const resultsPanel = document.getElementById('results-panel-foldable');
-    if (resultsPanel) {
-        resultsPanel.classList.remove('visible');
-        resultsPanel.classList.add('hidden');
-        resultsPanel.setAttribute('data-folded', 'true');
-        const icon = document.getElementById('results-panel-toggle-icon');
-        if (icon) icon.textContent = '▼';
-        const body = document.getElementById('results-panel-body');
-        if (body) body.innerHTML = '';
-    }
-    // 隱藏音高準度折疊面板
-    const pitchPanel = document.getElementById('pitch-panel');
-    if (pitchPanel) {
-        pitchPanel.classList.remove('visible');
-        pitchPanel.classList.add('hidden');
-        pitchPanel.setAttribute('data-folded', 'true');
-        const icon = document.getElementById('pitch-panel-toggle-icon');
-        if (icon) icon.textContent = '▼';
-        const pitchChart = document.getElementById('pitch-chart');
-        if (pitchChart) pitchChart.innerHTML = '';
-    }
-    import('./practice-ui.js').then(m => {
-        m.renderStructureList();
-        m.renderLyricsPanel();
-    });
-}
+
 
 export async function onSongChange() {
     const select = document.getElementById('song-select');
     state.currentSongId = select.value || null;
-    state.selectedStructure = null;
-    state.selectedPhraseIds = [];
-    state.selectedPhrasesData = [];
-    state.flatItems = [];
-    state.selectionRange = { from: null, to: null };
+    resetSelection();
     document.getElementById('range-actions').style.display = 'none';
     document.getElementById('range-info').textContent = '選擇一個段落或句子開始練習';
 
