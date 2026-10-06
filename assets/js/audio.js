@@ -46,6 +46,7 @@ export function scheduleBeats(ctx, count, intervalSec, startTime) {
         gain.gain.exponentialRampToValueAtTime(0.001, beatTime + 0.03);
         osc.start(beatTime);
         osc.stop(beatTime + 0.05);
+        playbackNodes.push(osc, gain);
     }
 }
 
@@ -85,9 +86,10 @@ export function playRange(startTime, endTime) {
         const ls = n.start - startTime;
         const nd = Math.min(n.dur, dur - ls);
         if (nd <= 0.01) continue;
+        const releaseStart = Math.max(ls + 0.005, ls + nd - 0.01);
         ng.gain.setValueAtTime(0, now + ls);
         ng.gain.linearRampToValueAtTime(0.3, now + ls + 0.005);
-        ng.gain.setValueAtTime(0.3, now + ls + nd - 0.01);
+        ng.gain.setValueAtTime(0.3, now + releaseStart);
         ng.gain.linearRampToValueAtTime(0, now + ls + nd);
         osc.connect(ng); ng.connect(gainNode);
         osc.start(now + ls); osc.stop(now + ls + nd + 0.01);
@@ -142,9 +144,10 @@ export function playRangeDelayed(startTime, endTime, startDelay) {
         const ls = n.start - startTime;
         const nd = Math.min(n.dur, dur - ls);
         if (nd <= 0.01) continue;
+        const releaseStart = Math.max(ls + 0.005, ls + nd - 0.01);
         ng.gain.setValueAtTime(0, startAt + ls);
         ng.gain.linearRampToValueAtTime(0.3, startAt + ls + 0.005);
-        ng.gain.setValueAtTime(0.3, startAt + ls + nd - 0.01);
+        ng.gain.setValueAtTime(0.3, startAt + releaseStart);
         ng.gain.linearRampToValueAtTime(0, startAt + ls + nd);
         osc.connect(ng); ng.connect(gainNode);
         osc.start(startAt + ls); osc.stop(startAt + ls + nd + 0.01);

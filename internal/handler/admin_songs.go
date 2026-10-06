@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -44,15 +45,15 @@ func (h *AdminSongsHandler) UploadSong(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("midi_file")
+	file, _, err := r.FormFile("midi_file")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "midi_file required")
 		return
 	}
 	defer file.Close()
 
-	data := make([]byte, header.Size)
-	if _, err := file.Read(data); err != nil {
+	data, err := io.ReadAll(file)
+	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to read file")
 		return
 	}
@@ -159,15 +160,15 @@ func (h *AdminSongsHandler) CreateNewVersion(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	file, header, err := r.FormFile("midi_file")
+	file, _, err := r.FormFile("midi_file")
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "midi_file required")
 		return
 	}
 	defer file.Close()
 
-	data := make([]byte, header.Size)
-	if _, err := file.Read(data); err != nil {
+	data, err := io.ReadAll(file)
+	if err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to read file")
 		return
 	}

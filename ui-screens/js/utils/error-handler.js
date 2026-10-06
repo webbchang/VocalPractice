@@ -3,14 +3,16 @@ export const UIErrorHandler = {
         // 1. 統一記錄到主控台以便除錯
         console.error("[系統錯誤]", error);
 
-        // 2. 根據錯誤類型進行分支處理
-        if (error.message.includes("401") || error.message.includes("Unauthorized")) {
+        // 2. 根據錯誤類型進行分支處理（優先用 api-service.js 設好的 error.status，
+        //    訊息字串比對僅作為沒有 .status 時的備援）
+        const status = error.status;
+        if (status === 401 || (!status && (error.message.includes("401") || error.message.includes("Unauthorized")))) {
             alert("登入逾時，請重新登入");
-            window.location.href = '../index.html'; // 統一導向登入頁 
+            window.location.href = '../index.html'; // 統一導向登入頁
             return;
         }
 
-        if (error.message.includes("409")) {
+        if (status === 409 || (!status && error.message.includes("409"))) {
             // 針對 409 衝突，可以呼叫特定的 UI 組件顯示詳細資訊 
             this.showDetailedModal("資料衝突", error.message);
             return;

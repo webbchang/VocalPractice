@@ -42,19 +42,27 @@ type phraseInput struct {
 }
 
 type structureInput struct {
-	Type       string        `json:"type"`
-	Title      string        `json:"title"`
-	StartTime  float64       `json:"start_time"`
-	EndTime    float64       `json:"end_time"`
-	StartTick  int           `json:"start_tick"`
-	EndTick    int           `json:"end_tick"`
-	OrderIndex int           `json:"order_index"`
-	TrackID    string        `json:"track_id,omitempty"`
-	Phrases    []phraseInput `json:"phrases,omitempty"`
+	Type       string             `json:"type"`
+	Title      string             `json:"title"`
+	StartTime  float64            `json:"start_time"`
+	EndTime    float64            `json:"end_time"`
+	StartTick  int                `json:"start_tick"`
+	EndTick    int                `json:"end_tick"`
+	OrderIndex int                `json:"order_index"`
+	TrackID    string             `json:"track_id,omitempty"`
+	Phrases    []phraseInput      `json:"phrases,omitempty"`
+	ParentID   string             `json:"parent_id,omitempty"`
+	Lyrics     []phraseLyricInput `json:"lyrics,omitempty"`
 }
 
 type bulkCreateRequest struct {
 	Structures []structureInput `json:"structures"`
+}
+
+// pendingLyrics buffers lyrics that must be written after their structure row exists.
+type pendingLyrics struct {
+	structureID uuid.UUID
+	lyrics      []phraseLyricInput
 }
 
 func (h *AdminStructuresHandler) BulkCreate(w http.ResponseWriter, r *http.Request) {
@@ -78,16 +86,57 @@ func (h *AdminStructuresHandler) BulkCreate(w http.ResponseWriter, r *http.Reque
 	}
 
 	var allStructures []*domain.SongStructure
-	var lyricsEntries []struct {
-		structureID uuid.UUID
-		lyrics      []phraseLyricInput
-	}
+	var lyricsEntries []pendingLyrics
 
 	for _, s := range req.Structures {
-		if domain.StructureType(s.Type) != domain.StructureTypeSECTION {
+		switch domain.StructureType(s.Type) {
+		case domain.StructureTypeSECTION:
+			// A section is created together with its (optional) nested phrases.
+		case domain.StructureTypePHRASE:
+			// Attach a single new phrase to an already existing section.
+			// This keeps the section and its sibling phrases (and their lyrics) untouched.
+			if s.ParentID == "" {
+				respondError(w, http.StatusBadRequest, "top-level PHRASE requires parent_id")
+				return
+			}
+			parentID, err := uuid.Parse(s.ParentID)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "invalid parent_id")
+				return
+			}
+			parent, err := h.store.GetStructureByID(parentID)
+			if err != nil || parent.SongID != songID || parent.Type != domain.StructureTypeSECTION {
+				respondError(w, http.StatusBadRequest, "parent_id must be a section in the same song")
+				return
+			}
+			var phraseTrackID *uuid.UUID
+			if s.TrackID != "" {
+				if tid, err := uuid.Parse(s.TrackID); err == nil {
+					phraseTrackID = &tid
+				}
+			} else {
+				phraseTrackID = parent.TrackID
+			}
+			phrase := domain.NewSongStructure(
+				songID, phraseTrackID, &parentID,
+				domain.StructureTypePHRASE,
+				s.Title, s.StartTime, s.EndTime,
+				s.StartTick, s.EndTick, s.OrderIndex,
+			)
+			if !isStructureWithin(phrase.StartTick, phrase.EndTick, phrase.StartTime, phrase.EndTime, parent) {
+				respondError(w, http.StatusBadRequest, "phrase tick range must be within parent section tick range")
+				return
+			}
+			allStructures = append(allStructures, phrase)
+			if len(s.Lyrics) > 0 {
+				lyricsEntries = append(lyricsEntries, pendingLyrics{structureID: phrase.ID, lyrics: s.Lyrics})
+			}
+			continue
+		default:
 			respondError(w, http.StatusBadRequest, "top-level structure must be SECTION")
 			return
 		}
+
 		var sectionTrackID *uuid.UUID
 		if s.TrackID != "" {
 			if tid, err := uuid.Parse(s.TrackID); err == nil {
@@ -113,6 +162,9 @@ func (h *AdminStructuresHandler) BulkCreate(w http.ResponseWriter, r *http.Reque
 				if tid, err := uuid.Parse(p.TrackID); err == nil {
 					phraseTrackID = &tid
 				}
+			} else {
+				// Inherit the section's track so the phrase stays scoped to the same voice.
+				phraseTrackID = sectionTrackID
 			}
 			phrase := domain.NewSongStructure(
 				songID, phraseTrackID, &parentID,
@@ -127,10 +179,7 @@ func (h *AdminStructuresHandler) BulkCreate(w http.ResponseWriter, r *http.Reque
 			allStructures = append(allStructures, phrase)
 
 			if len(p.Lyrics) > 0 {
-				lyricsEntries = append(lyricsEntries, struct {
-					structureID uuid.UUID
-					lyrics      []phraseLyricInput
-				}{structureID: phrase.ID, lyrics: p.Lyrics})
+				lyricsEntries = append(lyricsEntries, pendingLyrics{structureID: phrase.ID, lyrics: p.Lyrics})
 			}
 		}
 	}
@@ -354,12 +403,92 @@ func (h *AdminStructuresHandler) Delete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Deleting a section cascades to its phrases, so purge the lyrics of the whole
+	// subtree first. Otherwise the lyrics rows survive as unreachable orphans.
+	all, err := h.store.ListStructuresBySong(songID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to list structures")
+		return
+	}
+	lyricsDeleted := purgeLyricsForStructures(h.store, songID, collectSubtreeIDs(all, structID))
+
 	if err := h.store.DeleteStructure(structID); err != nil {
 		respondError(w, http.StatusInternalServerError, "failed to delete structure")
 		return
 	}
 
-	respondJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"status":         "deleted",
+		"lyrics_deleted": lyricsDeleted,
+	})
+}
+
+// DeleteAllStructures wipes the entire structure tree of a song (every section,
+// every phrase, on every track) together with all attached lyrics, leaving the
+// song ready for a clean CSV import.
+//
+// Requires ?confirm=true to guard against accidental calls.
+func (h *AdminStructuresHandler) DeleteAllStructures(w http.ResponseWriter, r *http.Request) {
+	songID, err := uuid.Parse(chi.URLParam(r, "song_id"))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, "invalid song_id")
+		return
+	}
+
+	if _, err := h.store.GetSongByID(songID); err != nil {
+		respondError(w, http.StatusNotFound, "song not found")
+		return
+	}
+
+	existing, err := h.store.ListStructuresBySong(songID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to list structures")
+		return
+	}
+
+	if r.URL.Query().Get("confirm") != "true" {
+		sections, phrases := countSectionsAndPhrases(existing)
+		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
+			"error":          "confirmation required",
+			"song_id":        songID,
+			"total":          len(existing),
+			"section_count":  sections,
+			"phrase_count":   phrases,
+			"message":        "此操作會刪除所有聲部的段落、樂句與歌詞，如需執行請加上 ?confirm=true",
+			"confirm_needed": true,
+		})
+		return
+	}
+
+	// Purge lyrics before the structures disappear (see purgeLyricsForStructures).
+	lyricsDeleted := purgeLyricsForStructures(h.store, songID, collectStructureIDs(existing))
+
+	if err := h.store.DeleteAllStructuresBySong(songID); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to delete structures")
+		return
+	}
+
+	sections, phrases := countSectionsAndPhrases(existing)
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"status":         "deleted",
+		"song_id":        songID,
+		"deleted":        len(existing),
+		"section_count":  sections,
+		"phrase_count":   phrases,
+		"lyrics_deleted": lyricsDeleted,
+		"structures":     []*domain.StructureNode{},
+	})
+}
+
+func countSectionsAndPhrases(structures []*domain.SongStructure) (sections, phrases int) {
+	for _, st := range structures {
+		if st.Type == domain.StructureTypeSECTION {
+			sections++
+		} else {
+			phrases++
+		}
+	}
+	return sections, phrases
 }
 
 func trackName(trackID *uuid.UUID, song *domain.Song) string {
@@ -429,8 +558,9 @@ func (h *AdminStructuresHandler) ExportStructures(w http.ResponseWriter, r *http
 		}
 		title := strings.ReplaceAll(st.Title, "\"", "\"\"")
 		lyr := strings.ReplaceAll(lyrics, "\"", "\"\"")
-		sb.WriteString(fmt.Sprintf("%s,\"%s\",%.6f,%.6f,%d,%s,\"%s\"\n",
-			t, title, st.StartTime, st.EndTime, st.OrderIdx, tName, lyr))
+		tNameEscaped := strings.ReplaceAll(tName, "\"", "\"\"")
+		sb.WriteString(fmt.Sprintf("%s,\"%s\",%.6f,%.6f,%d,\"%s\",\"%s\"\n",
+			t, title, st.StartTime, st.EndTime, st.OrderIdx, tNameEscaped, lyr))
 	}
 
 	// Build CSV rows grouped by track order
@@ -621,61 +751,99 @@ func (h *AdminStructuresHandler) ImportStructures(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Delete all existing structures + lyrics for this song
-	h.store.DeleteAllStructuresBySong(songID)
-	for _, ex := range existing {
-		if ex.TrackID != nil {
-			h.store.DeleteTrackLyrics(*ex.TrackID, ex.ID)
-		}
-		// Also delete lyrics for this structure across all tracks
-		deleteAllLyricsByStructure(h.store, ex.ID)
+	// Replace the song's whole structure tree: purge lyrics first (while the
+	// structures still resolve), then drop every structure on every track.
+	purgeLyricsForStructures(h.store, songID, collectStructureIDs(existing))
+	if err := h.store.DeleteAllStructuresBySong(songID); err != nil {
+		respondError(w, http.StatusInternalServerError, "failed to clear existing structures")
+		return
 	}
 
 	// Get tempo map for tick calculation
 	svcTempoMap := convertTempoMap(song.TempoMap)
 	tpq := song.TicksPerQuarter
 
-	// Build and save new structures
+	// Build and save new structures.
+	// Sections are created in a first pass so that phrases can be linked to their
+	// parent regardless of the row order inside the CSV, and so that a phrase is
+	// only ever linked to a section belonging to the SAME track.
 	var allStructs []*domain.SongStructure
-	sectionByTitle := make(map[string]*domain.SongStructure)
 	lyricsBatch := make([]struct {
 		trackID     uuid.UUID
 		structureID uuid.UUID
 		lyrics      string
 	}, 0)
 
-	for _, e := range entries {
-		var trackID *uuid.UUID
-		if e.TrackName != "" {
-			if tid, ok := trackByName[e.TrackName]; ok {
-				trackID = &tid
-			}
+	// sectionsByTrack keys sections by CSV track_name ("" == no track).
+	sectionsByTrack := make(map[string][]*domain.SongStructure)
+
+	resolveTrackID := func(name string) *uuid.UUID {
+		if name == "" {
+			return nil
 		}
-		if e.Type == "S" {
-			st := domain.NewSongStructure(songID, trackID, nil, domain.StructureTypeSECTION, e.Title, e.Start, e.End, service.SecToTick(e.Start, svcTempoMap, tpq), service.SecToTick(e.End, svcTempoMap, tpq), e.Order)
-			allStructs = append(allStructs, st)
-			sectionByTitle[e.Title] = st
-		} else if e.Type == "P" {
-			// Find parent section (the most recent SECTION that contains this phrase)
-			var parent *domain.SongStructure
-			for _, st := range allStructs {
-				if st.Type == domain.StructureTypeSECTION && st.StartTime <= e.Start && st.EndTime >= e.End {
-					parent = st
+		if tid, ok := trackByName[name]; ok {
+			t := tid
+			return &t
+		}
+		return nil
+	}
+
+	for _, e := range entries {
+		if e.Type != "S" {
+			continue
+		}
+		st := domain.NewSongStructure(songID, resolveTrackID(e.TrackName), nil, domain.StructureTypeSECTION, e.Title, e.Start, e.End, service.SecToTick(e.Start, svcTempoMap, tpq), service.SecToTick(e.End, svcTempoMap, tpq), e.Order)
+		allStructs = append(allStructs, st)
+		sectionsByTrack[e.TrackName] = append(sectionsByTrack[e.TrackName], st)
+	}
+
+	// findParent returns the tightest section of the same track that contains [start,end].
+	// It falls back to the "no track" sections so that a global section can still
+	// host per-track phrases (the legacy layout).
+	findParent := func(trackName string, start, end float64) *domain.SongStructure {
+		best := func(candidates []*domain.SongStructure) *domain.SongStructure {
+			var found *domain.SongStructure
+			for _, st := range candidates {
+				if st.StartTime > start || st.EndTime < end {
+					continue
+				}
+				if found == nil || (st.EndTime-st.StartTime) < (found.EndTime-found.StartTime) {
+					found = st
 				}
 			}
-			if parent == nil {
-				respondError(w, http.StatusBadRequest, "phrase '"+e.Title+"' has no containing section")
-				return
-			}
-			ph := domain.NewSongStructure(songID, trackID, &parent.ID, domain.StructureTypePHRASE, e.Title, e.Start, e.End, service.SecToTick(e.Start, svcTempoMap, tpq), service.SecToTick(e.End, svcTempoMap, tpq), e.Order)
-			allStructs = append(allStructs, ph)
-			if e.Lyrics != "" && trackID != nil {
-				lyricsBatch = append(lyricsBatch, struct {
-					trackID     uuid.UUID
-					structureID uuid.UUID
-					lyrics      string
-				}{trackID: *trackID, structureID: ph.ID, lyrics: e.Lyrics})
-			}
+			return found
+		}
+		if p := best(sectionsByTrack[trackName]); p != nil {
+			return p
+		}
+		if trackName != "" {
+			return best(sectionsByTrack[""])
+		}
+		return nil
+	}
+
+	for _, e := range entries {
+		if e.Type != "P" {
+			continue
+		}
+		parent := findParent(e.TrackName, e.Start, e.End)
+		if parent == nil {
+			respondError(w, http.StatusBadRequest, "phrase '"+e.Title+"' has no containing section")
+			return
+		}
+		trackID := resolveTrackID(e.TrackName)
+		if trackID == nil {
+			// Inherit the parent's track when the CSV row omits track_name.
+			trackID = parent.TrackID
+		}
+		ph := domain.NewSongStructure(songID, trackID, &parent.ID, domain.StructureTypePHRASE, e.Title, e.Start, e.End, service.SecToTick(e.Start, svcTempoMap, tpq), service.SecToTick(e.End, svcTempoMap, tpq), e.Order)
+		allStructs = append(allStructs, ph)
+		if e.Lyrics != "" && trackID != nil {
+			lyricsBatch = append(lyricsBatch, struct {
+				trackID     uuid.UUID
+				structureID uuid.UUID
+				lyrics      string
+			}{trackID: *trackID, structureID: ph.ID, lyrics: e.Lyrics})
 		}
 	}
 
@@ -795,18 +963,65 @@ func timesOverlap(s1, e1, s2, e2 float64) bool {
 	return s1 < e2 && s2 < e1
 }
 
-// deleteAllLyricsByStructure removes all TrackLyrics entries for a given structure ID.
-func deleteAllLyricsByStructure(store storage.Store, structureID uuid.UUID) {
-	// List all lyrics by song is the best we can do without direct method;
-	// we find all lyrics entries with this structureID by attempting to list all.
-	// Since the store uses "trackID:structureID" keys, we need a song-aware approach.
-	// A simpler approach: iterate all trackLyrics keys and delete matching structureID.
-	// But since store doesn't expose raw map, we'll use the available methods:
-	// ImportStructures will delete all structures+lyrics for a song in one pass,
-	// so we delete structures first, then the lyrics that were connected to them.
-	// The existing DeleteTrackLyrics calls in the loop above handle track-specific ones.
-	// For global structures (trackID==nil), there are no lyrics entries.
-	_ = structureID // no-op: lyrics are already handled by DeleteTrackLyrics calls above
+// purgeLyricsForStructures deletes every TrackLyrics row attached to any of the
+// given structure IDs, across ALL tracks (not just the track recorded on the
+// structure itself). Historic data can hold lyrics whose track_id differs from
+// the owning structure's track_id, so filtering by structure ID is the only
+// reliable way to avoid orphaned rows.
+//
+// It MUST be called BEFORE the structures are deleted: ListTrackLyricsBySong
+// resolves lyrics through the structures table, so afterwards it returns nothing.
+func purgeLyricsForStructures(store storage.Store, songID uuid.UUID, ids map[uuid.UUID]bool) int {
+	if len(ids) == 0 {
+		return 0
+	}
+	songLyrics, err := store.ListTrackLyricsBySong(songID)
+	if err != nil {
+		return 0
+	}
+	deleted := 0
+	for _, l := range songLyrics {
+		if !ids[l.StructureID] {
+			continue
+		}
+		if err := store.DeleteTrackLyrics(l.TrackID, l.StructureID); err == nil {
+			deleted++
+		}
+	}
+	return deleted
+}
+
+// collectStructureIDs returns the ID set of the given structures.
+func collectStructureIDs(structures []*domain.SongStructure) map[uuid.UUID]bool {
+	ids := make(map[uuid.UUID]bool, len(structures))
+	for _, st := range structures {
+		ids[st.ID] = true
+	}
+	return ids
+}
+
+// collectSubtreeIDs returns rootID plus the IDs of all its (recursive) descendants.
+func collectSubtreeIDs(structures []*domain.SongStructure, rootID uuid.UUID) map[uuid.UUID]bool {
+	childrenOf := make(map[uuid.UUID][]uuid.UUID, len(structures))
+	for _, st := range structures {
+		if st.ParentID != nil {
+			childrenOf[*st.ParentID] = append(childrenOf[*st.ParentID], st.ID)
+		}
+	}
+	ids := map[uuid.UUID]bool{rootID: true}
+	queue := []uuid.UUID{rootID}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, child := range childrenOf[cur] {
+			if ids[child] {
+				continue
+			}
+			ids[child] = true
+			queue = append(queue, child)
+		}
+	}
+	return ids
 }
 
 // convertTempoMap converts domain TempoMapEntry slice to service TempoEntry slice
@@ -984,13 +1199,8 @@ func (h *AdminStructuresHandler) CopyStructuresFromSong(w http.ResponseWriter, r
 
 	// Delete existing structures on target song if force
 	if len(existing) > 0 {
+		purgeLyricsForStructures(h.store, targetSongID, collectStructureIDs(existing))
 		h.store.DeleteAllStructuresBySong(targetSongID)
-		for _, ex := range existing {
-			if ex.TrackID != nil {
-				h.store.DeleteTrackLyrics(*ex.TrackID, ex.ID)
-			}
-			deleteAllLyricsByStructure(h.store, ex.ID)
-		}
 	}
 
 	// Build old ID -> new ID mapping for parent references

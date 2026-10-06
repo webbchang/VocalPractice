@@ -86,7 +86,7 @@ export const StructureRenderer = {
 
     renderTree(structures, trackId) {
         const container = document.getElementById('structure-tree');
-        const copyBtn = document.getElementById('copy-structures-btn');
+        const copyBtn = document.getElementById('btn-copy-structures');
 
         if (!structures || structures.length === 0) {
             container.innerHTML = '<div style="text-align: center; color: #999; padding: 20px;">尚無段落結構</div>';

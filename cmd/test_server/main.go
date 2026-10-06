@@ -132,6 +132,7 @@ func main() {
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.RequestID)
 	r.Use(corsMiddleware)
+	r.Use(maxBodySizeMiddleware(60 << 20))
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -156,6 +157,7 @@ func main() {
 		r.Get("/songs/{song_id}/versions", adminSongsHandler.ListVersions)
 
 		r.Post("/songs/{song_id}/structures", adminStructuresHandler.BulkCreate)
+		r.Delete("/songs/{song_id}/structures", adminStructuresHandler.DeleteAllStructures)
 		r.Get("/songs/{song_id}/structures/export", adminStructuresHandler.ExportStructures)
 		r.Post("/songs/{song_id}/structures/import", adminStructuresHandler.ImportStructures)
 		r.Post("/songs/{song_id}/structures/copy-from/{source_song_id}", adminStructuresHandler.CopyStructuresFromSong)
@@ -550,6 +552,18 @@ func resolveSeedPath(p string) string {
 		return p
 	}
 	return filepath.Join(seed.RepoRoot(), p)
+}
+
+// maxBodySizeMiddleware caps request body size to protect against unbounded
+// JSON payloads (e.g. base64-encoded audio in the analyze endpoints) exhausting
+// server memory. Set above the multipart MIDI-upload limit so uploads aren't affected.
+func maxBodySizeMiddleware(n int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, n)
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

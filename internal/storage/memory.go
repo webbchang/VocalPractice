@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -196,8 +197,9 @@ func (s *MemoryStore) CreateSong(song *domain.Song) error {
 }
 
 func (s *MemoryStore) GetSongByID(id uuid.UUID) (*domain.Song, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	// Write lock: DeduplicateTrackNames mutates song.Tracks in place below.
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	song, ok := s.songs[id]
 	if !ok {
 		return nil, ErrNotFound
@@ -208,21 +210,23 @@ func (s *MemoryStore) GetSongByID(id uuid.UUID) (*domain.Song, error) {
 }
 
 func (s *MemoryStore) ListSongs() ([]*domain.Song, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	result := make([]*domain.Song, 0, len(s.songs))
 	for _, song := range s.songs {
+		domain.DeduplicateTrackNames(song.Tracks)
 		result = append(result, song)
 	}
 	return result, nil
 }
 
 func (s *MemoryStore) ListActiveSongs() ([]*domain.Song, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	result := make([]*domain.Song, 0)
 	for _, song := range s.songs {
 		if song.IsActive {
+			domain.DeduplicateTrackNames(song.Tracks)
 			result = append(result, song)
 		}
 	}
@@ -230,11 +234,12 @@ func (s *MemoryStore) ListActiveSongs() ([]*domain.Song, error) {
 }
 
 func (s *MemoryStore) ListVersionsByGroup(groupID uuid.UUID) ([]*domain.Song, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	result := make([]*domain.Song, 0)
 	for _, song := range s.songs {
 		if song.VersionGroup == groupID {
+			domain.DeduplicateTrackNames(song.Tracks)
 			result = append(result, song)
 		}
 	}
@@ -271,6 +276,28 @@ func (s *MemoryStore) DeleteSong(id uuid.UUID) error {
 		return ErrNotFound
 	}
 	delete(s.songs, id)
+
+	// Cascade: mirror the FK ON DELETE CASCADE behavior PostgresStore gets for
+	// free, so structures/assessments/lyrics don't orphan (and get persisted
+	// forever by the backup snapshot) when running on the in-memory store.
+	deletedStructureIDs := make(map[uuid.UUID]bool)
+	for sid, st := range s.structures {
+		if st.SongID == id {
+			deletedStructureIDs[sid] = true
+			delete(s.structures, sid)
+		}
+	}
+	for aid, a := range s.assessments {
+		if a.SongID == id {
+			delete(s.assessments, aid)
+		}
+	}
+	for key, tl := range s.trackLyrics {
+		if deletedStructureIDs[tl.StructureID] {
+			delete(s.trackLyrics, key)
+		}
+	}
+
 	s.notifyWrite()
 	return nil
 }
@@ -285,7 +312,11 @@ func (s *MemoryStore) UpdateTrack(songID, trackID uuid.UUID, updates map[string]
 	for i, t := range song.Tracks {
 		if t.ID == trackID {
 			if v, ok := updates["is_vocal"]; ok {
-				song.Tracks[i].IsVocal = v.(bool)
+				b, ok := v.(bool)
+				if !ok {
+					return fmt.Errorf("is_vocal must be a boolean")
+				}
+				song.Tracks[i].IsVocal = b
 			}
 			s.notifyWrite()
 			return nil

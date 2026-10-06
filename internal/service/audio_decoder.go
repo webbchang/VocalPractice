@@ -56,7 +56,7 @@ func decodeWAV(data []byte) ([]float64, int, error) {
 
 		switch chunkID {
 		case "fmt ":
-			if offset+22 > len(data) {
+			if offset+24 > len(data) {
 				return nil, 0, ErrInvalidWAV
 			}
 			audioFormat = int(binary.LittleEndian.Uint16(data[offset+8 : offset+10]))

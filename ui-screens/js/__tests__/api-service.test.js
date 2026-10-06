@@ -254,7 +254,7 @@ describe('SongService', () => {
     });
 
     describe('importCSV', () => {
-        it('should POST CSV text with force=true', async () => {
+        it('should default to force=false so the server can report conflicts', async () => {
             const csvText = 'type,title\nS,Verse';
             global.fetch = vi.fn().mockResolvedValue({
                 ok: true,
@@ -262,6 +262,26 @@ describe('SongService', () => {
             });
 
             const result = await SongService.importCSV('song-1', csvText);
+            expect(result.imported).toBe(1);
+            expect(global.fetch).toHaveBeenCalledWith(
+                '/api/v1/admin/songs/song-1/structures/import?force=false',
+                expect.objectContaining({
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/csv', 'Authorization': 'Bearer test-token' },
+                    body: csvText,
+                    credentials: 'same-origin',
+                })
+            );
+        });
+
+        it('should POST CSV text with force=true when explicitly requested', async () => {
+            const csvText = 'type,title\nS,Verse';
+            global.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                json: () => Promise.resolve({ imported: 1 }),
+            });
+
+            const result = await SongService.importCSV('song-1', csvText, true);
             expect(result.imported).toBe(1);
             expect(global.fetch).toHaveBeenCalledWith(
                 '/api/v1/admin/songs/song-1/structures/import?force=true',

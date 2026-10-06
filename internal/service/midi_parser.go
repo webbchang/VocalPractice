@@ -214,6 +214,11 @@ func buildTempoMap(r *bytes.Reader, numTracks uint16, ticksPerQuarter int) []Tem
 			continue
 		}
 		trackLen := binary.BigEndian.Uint32(trackHeader[4:8])
+		if int64(trackLen) > int64(r.Len()) {
+			// Corrupt/malicious track-length field claiming more data than the
+			// file actually has: bail out before allocating trackLen bytes.
+			continue
+		}
 		trackData := make([]byte, trackLen)
 		if _, err := io.ReadFull(r, trackData); err != nil {
 			continue
@@ -412,7 +417,7 @@ func TickToSec(tick int, tempoMap []TempoEntry, ticksPerQuarter int) float64 {
 // and converting them to seconds using the global tempo map.
 // This ensures all tracks use consistent tempo timing regardless of which track
 // contains the tempo change events.
-func readTrackWithGlobalTempo(r io.Reader, ticksPerQuarter int, globalTempoMap []TempoEntry) (*domain.MIDITrack, error) {
+func readTrackWithGlobalTempo(r *bytes.Reader, ticksPerQuarter int, globalTempoMap []TempoEntry) (*domain.MIDITrack, error) {
 	trackHeader := make([]byte, 8)
 	if _, err := io.ReadFull(r, trackHeader); err != nil {
 		return nil, err
@@ -423,6 +428,11 @@ func readTrackWithGlobalTempo(r io.Reader, ticksPerQuarter int, globalTempoMap [
 	}
 
 	trackLen := binary.BigEndian.Uint32(trackHeader[4:8])
+	if int64(trackLen) > int64(r.Len()) {
+		// Corrupt/malicious track-length field claiming more data than the
+		// file actually has: bail out before allocating trackLen bytes.
+		return nil, errors.New("track length exceeds remaining file data")
+	}
 	trackData := make([]byte, trackLen)
 	if _, err := io.ReadFull(r, trackData); err != nil {
 		return nil, err
@@ -516,6 +526,20 @@ func readTrackWithGlobalTempo(r io.Reader, ticksPerQuarter int, globalTempoMap [
 			idx += 2
 
 			if highNibble == 0x90 && velocity > 0 {
+				// Retrigger: a Note-On for a pitch that's already sounding
+				// (legato, no intervening Note-Off) implicitly closes the
+				// earlier note instead of silently discarding it.
+				if p, ok := pending[pitch]; ok {
+					prevNote := domain.MIDINote{
+						Pitch:     p.pitch,
+						Velocity:  p.velocity,
+						StartTime: math.Round(p.start*100) / 100,
+						EndTime:   math.Round(absTimeSec*100) / 100,
+					}
+					if prevNote.EndTime > prevNote.StartTime {
+						track.Notes = append(track.Notes, prevNote)
+					}
+				}
 				pending[pitch] = &pendingNote{
 					pitch:    pitch,
 					velocity: velocity,

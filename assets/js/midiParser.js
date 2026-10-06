@@ -81,14 +81,21 @@ function parseMIDINotes(midiArrayBuf) {
     }
 
     // --- Step 2: tickToSec helper using tempo map ---
+    // MIDI default tempo (500000 us/qn = 120 BPM) governs from tick 0 until the
+    // first recorded tempo event; using tempoMap[0]'s tempo for that span (the
+    // previous code) is wrong when that event isn't at tick 0.
     function tickToSec(tick) {
+        const DEFAULT_TEMPO = 500000;
+        if (tempoMap.length === 0 || tick <= tempoMap[0].tick) {
+            return tick * (DEFAULT_TEMPO / (ticksPerQN * 1000000));
+        }
         let i = 0;
         for (let j = tempoMap.length - 1; j >= 0; j--) {
             if (tempoMap[j].tick <= tick) { i = j; break; }
         }
-        let timeSec = 0;
-        let prevTick = 0;
-        let prevTempo = tempoMap.length > 0 ? tempoMap[0].usPerQN : 500000; // Default to 120 BPM if no tempo map
+        let timeSec = tempoMap[0].tick * (DEFAULT_TEMPO / (ticksPerQN * 1000000));
+        let prevTick = tempoMap[0].tick;
+        let prevTempo = tempoMap[0].usPerQN;
         for (let k = 1; k <= i; k++) {
             const dt = tempoMap[k].tick - prevTick;
             timeSec += dt * (prevTempo / (ticksPerQN * 1000000));

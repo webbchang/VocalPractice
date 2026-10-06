@@ -35,7 +35,14 @@ const mockPlayRange = vi.fn();
 const mockStopPlayback = vi.fn();
 const mockPlayRangeDelayed = vi.fn();
 const mockScheduleBeats = vi.fn();
-const mockGetAudioCtx = vi.fn(() => ({ currentTime: 100 }));
+const mockGetAudioCtx = vi.fn(() => ({
+    currentTime: 100,
+    state: 'running',
+    resume: vi.fn(() => Promise.resolve()),
+    createMediaStreamSource: vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn() })),
+    createScriptProcessor: vi.fn(() => ({ connect: vi.fn(), disconnect: vi.fn(), onaudioprocess: null })),
+    destination: {},
+}));
 
 vi.mock('../api.js', () => ({
     api: vi.fn(),
@@ -75,6 +82,13 @@ beforeEach(() => {
         extractBPM: vi.fn(() => 120),
         midiPitchToFreq: vi.fn(() => 440),
     };
+    navigator.mediaDevices = {
+        getUserMedia: vi.fn(() => Promise.resolve({
+            getAudioTracks: () => [{ label: 'mock mic' }],
+            getTracks: () => [{ stop: vi.fn() }],
+        })),
+    };
+    Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
 });
 
 describe('practice-business.js', () => {
@@ -92,6 +106,7 @@ describe('practice-business.js', () => {
         state.selectedStructure = null;
         state.selectedPhraseIds = [];
         state.selectedPhrasesData = [];
+        state.selectedSectionIds = [];
         state.flatItems = [];
         state.selectionRange = { from: null, to: null };
         state.parsedNotes = null;
@@ -145,7 +160,9 @@ describe('practice-business.js', () => {
         });
 
         it('should return all phrases lyrics when section with phrases is selected', () => {
-            state.selectedStructure = { id: 's1', title: 'Verse', start: 0, end: 10 };
+            // Mirrors what selectSection('s1') actually populates in selection.js.
+            state.selectedSectionIds = ['s1'];
+            state.selectedPhrasesData = state.structures[0].phrases;
             const result = businessModule.getLyricsForSelection();
             expect(result.count).toBe(2);
             expect(result.phrases[0].title).toBe('Line 1');
@@ -155,7 +172,7 @@ describe('practice-business.js', () => {
         });
 
         it('should return section title when section has no phrases', () => {
-            state.selectedStructure = { id: 's2', title: 'Chorus', start: 10, end: 20 };
+            state.selectedSectionIds = ['s2'];
             const result = businessModule.getLyricsForSelection();
             expect(result.count).toBe(1);
             expect(result.phrases[0].title).toBe('Chorus');
@@ -184,7 +201,8 @@ describe('practice-business.js', () => {
                     { id: 'p1', title: 'Line 1', start_time: 0, end_time: 5 },
                 ],
             }];
-            state.selectedStructure = { id: 's1', title: 'Verse', start: 0, end: 10 };
+            state.selectedSectionIds = ['s1'];
+            state.selectedPhrasesData = state.structures[0].phrases;
             const result = businessModule.getLyricsForSelection();
             expect(result.count).toBe(1);
             expect(result.phrases[0].lyrics).toBe('');
@@ -342,14 +360,14 @@ describe('practice-business.js', () => {
             alertSpy.mockRestore();
         });
 
-        it('should update DOM and call playRangeWithBeats when valid', () => {
+        it('should update DOM and call playRangeWithBeats when valid', async () => {
             state.selectedStructure = { id: 's1', start: 0, end: 10, title: 'Verse' };
             state.referenceNotes = [{ pitch: 60, start: 1, dur: 0.5 }];
             state.parsedNotes = [{ pitch: 60, start: 1, dur: 0.5, track: 0 }];
             state.parsedTrackIndex = 0;
             state.midiData = new ArrayBuffer(0);
 
-            businessModule.startPractice();
+            await businessModule.startPractice();
 
             expect(document.getElementById('status-text').textContent).toContain('Verse');
             expect(document.getElementById('chart-area').innerHTML).toContain('比對基準');
@@ -358,6 +376,33 @@ describe('practice-business.js', () => {
             expect(mockScheduleBeats).toHaveBeenCalled();
             // Verify playRangeDelayed was called for accompaniment
             expect(mockPlayRangeDelayed).toHaveBeenCalledWith(0, 10, expect.any(Number));
+        });
+
+        it('should alert and not proceed when the browser has no getUserMedia', async () => {
+            state.selectedStructure = { id: 's1', start: 0, end: 10, title: 'Verse' };
+            state.referenceNotes = [{ pitch: 60, start: 1, dur: 0.5 }];
+            navigator.mediaDevices = {};
+            const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+            await businessModule.startPractice();
+
+            expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('不支援錄音功能'));
+            expect(mockScheduleBeats).not.toHaveBeenCalled();
+            alertSpy.mockRestore();
+        });
+
+        it('should show a friendly error and not start playback when mic access fails', async () => {
+            state.selectedStructure = { id: 's1', start: 0, end: 10, title: 'Verse' };
+            state.referenceNotes = [{ pitch: 60, start: 1, dur: 0.5 }];
+            navigator.mediaDevices = {
+                getUserMedia: vi.fn(() => Promise.reject(new Error('Permission denied'))),
+            };
+
+            await businessModule.startPractice();
+
+            expect(document.getElementById('status-text').textContent).toBe('無法使用麥克風');
+            expect(document.getElementById('chart-area').innerHTML).toContain('無法取得麥克風權限');
+            expect(mockScheduleBeats).not.toHaveBeenCalled();
         });
     });
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sort"
 
 	"vocal-practice-app/internal/domain"
@@ -144,10 +145,16 @@ func (s *PostgresStore) GetUserByEmail(email string) (*domain.User, error) {
 }
 
 func (s *PostgresStore) UpdateUser(user *domain.User) error {
-	_, err := s.pool.Exec(context.Background(),
+	tag, err := s.pool.Exec(context.Background(),
 		`UPDATE users SET username=$1, email=$2, password_hash=$3, role=$4, is_active=$5 WHERE id=$6`,
 		user.Username, user.Email, user.PasswordHash, user.Role, user.IsActive, user.ID)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *PostgresStore) ListUsers() ([]*domain.User, error) {
@@ -290,9 +297,17 @@ func (s *PostgresStore) DeleteSong(id uuid.UUID) error {
 }
 
 func (s *PostgresStore) UpdateTrack(songID, trackID uuid.UUID, updates map[string]interface{}) error {
-	// Read current tracks JSON
+	ctx := context.Background()
+	// Read-modify-write under a row lock so two concurrent updates to different
+	// tracks of the same song can't clobber each other (lost-update race).
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
 	var tracksJSON []byte
-	err := s.pool.QueryRow(context.Background(), `SELECT tracks FROM songs WHERE id=$1`, songID).Scan(&tracksJSON)
+	err = tx.QueryRow(ctx, `SELECT tracks FROM songs WHERE id=$1 FOR UPDATE`, songID).Scan(&tracksJSON)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrNotFound
 	}
@@ -305,7 +320,11 @@ func (s *PostgresStore) UpdateTrack(songID, trackID uuid.UUID, updates map[strin
 	for i := range tracks {
 		if tracks[i].ID == trackID {
 			if v, ok := updates["is_vocal"]; ok {
-				tracks[i].IsVocal = v.(bool)
+				b, ok := v.(bool)
+				if !ok {
+					return fmt.Errorf("is_vocal must be a boolean")
+				}
+				tracks[i].IsVocal = b
 			}
 			found = true
 			break
@@ -314,9 +333,14 @@ func (s *PostgresStore) UpdateTrack(songID, trackID uuid.UUID, updates map[strin
 	if !found {
 		return ErrNotFound
 	}
-	newJSON, _ := json.Marshal(tracks)
-	_, err = s.pool.Exec(context.Background(), `UPDATE songs SET tracks=$1 WHERE id=$2`, newJSON, songID)
-	return err
+	newJSON, err := json.Marshal(tracks)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE songs SET tracks=$1 WHERE id=$2`, newJSON, songID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // ——— Structure ———
@@ -356,10 +380,16 @@ func (s *PostgresStore) GetStructureByID(id uuid.UUID) (*domain.SongStructure, e
 }
 
 func (s *PostgresStore) UpdateStructure(st *domain.SongStructure) error {
-	_, err := s.pool.Exec(context.Background(),
+	tag, err := s.pool.Exec(context.Background(),
 		`UPDATE song_structures SET track_id=$1, parent_id=$2, type=$3, title=$4, start_time=$5, end_time=$6, start_tick=$7, end_tick=$8, order_idx=$9 WHERE id=$10`,
 		st.TrackID, st.ParentID, st.Type, st.Title, st.StartTime, st.EndTime, st.StartTick, st.EndTick, st.OrderIdx, st.ID)
-	return err
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *PostgresStore) DeleteStructure(id uuid.UUID) error {

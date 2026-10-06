@@ -20,46 +20,31 @@ function determineParsedTrackIndex() {
 
 
 export function getLyricsForSelection() {
-    const { structures, selectedStructure, selectedPhraseIds, selectedPhrasesData } = state;
+    const { structures, selectedPhrasesData, selectedSectionIds } = state;
     const result = { phrases: [], count: 0 };
 
-    // 如果有多選句子，用 selectedPhrasesData
-    if (selectedPhraseIds.length > 0 && selectedPhrasesData.length > 0) {
-        for (const p of selectedPhrasesData) {
+    // 個別選取的句子，以及整段選取所涵蓋的句子
+    for (const p of selectedPhrasesData) {
+        result.phrases.push({
+            title: p.title,
+            lyrics: p.lyrics || ''
+        });
+    }
+
+    // 整段選取但該段沒有句子：顯示 section 自己的標題/歌詞
+    // (selectedStructure.id 是合成的 'sel-<timestamp>'，不對應任何真實 structure，
+    // 所以這裡改用 selectedSectionIds 直接比對)
+    for (const sectionId of selectedSectionIds) {
+        const s = structures.find(x => x.id === sectionId);
+        if (s && (!s.phrases || s.phrases.length === 0)) {
             result.phrases.push({
-                title: p.title,
-                lyrics: p.lyrics || ''
+                title: s.title,
+                lyrics: s.lyrics || ''
             });
         }
-        result.count = result.phrases.length;
-        return result;
     }
 
-    // 如果有選取的 structure（section），顯示該 section 下所有 phrases 的歌詞
-    if (selectedStructure) {
-        for (const s of structures) {
-            if (s.id === selectedStructure.id) {
-                const phrases = s.phrases || [];
-                if (phrases.length > 0) {
-                    for (const p of phrases) {
-                        result.phrases.push({
-                            title: p.title,
-                            lyrics: p.lyrics || ''
-                        });
-                    }
-                } else {
-                    // section 本身沒有 phrases，顯示 section 標題
-                    result.phrases.push({
-                        title: s.title,
-                        lyrics: s.lyrics || ''
-                    });
-                }
-                result.count = result.phrases.length;
-                return result;
-            }
-        }
-    }
-
+    result.count = result.phrases.length;
     return result;
 }
 
@@ -217,65 +202,66 @@ function getTimingInfo(sectionStart, sectionEnd) {
 }
 
 /**
+ * Compute the count-in/accompaniment timing for a practice range, anchored to a given
+ * AudioContext.currentTime. A standard "1, 2, 3, (sing)" count-in: the first note lands
+ * exactly one beat interval after the last click, regardless of tempo — a fixed gap
+ * (the previous behavior) only felt musically right by coincidence around ~240 BPM.
+ *
+ * @param {number} sectionStart
+ * @param {number} sectionEnd
+ * @param {number} now - ctx.currentTime at the moment playback is being scheduled
+ */
+function computeCountInTiming(sectionStart, sectionEnd, now) {
+    const { firstNoteTime, beatInterval, bpm } = getTimingInfo(sectionStart, sectionEnd);
+
+    // Ensure beat 1 lands in the future: accDelay + firstNoteTime - 3×beatInterval >= 0
+    const accDelay = Math.max(3 * beatInterval - firstNoteTime, 0.1);
+    const firstNoteAbsTime = now + accDelay + firstNoteTime;
+    const beat1AbsTime = firstNoteAbsTime - 3 * beatInterval;
+    const recordingTrimSec = 3 * beatInterval;
+
+    return { firstNoteTime, beatInterval, bpm, accDelay, now, firstNoteAbsTime, beat1AbsTime, recordingTrimSec };
+}
+
+/**
  * Play a section/phrase range with 3-beat lead-in.
  * Used by both section/phrase ▶️ buttons (no recording) and "開始練習" (with recording).
- *
- * Timing reference (relative to the section's first note):
- *   T = firstNote - 3×beatInterval - 0.25: Accompaniment starts
- *   T = firstNote - 2×beatInterval - 0.25: Beat 1
- *   T = firstNote - beatInterval - 0.25:    Beat 2
- *   T = firstNote - 0.25:                   Beat 3
- *   T = firstNote - 0.25:                   Recording starts (when withRecording=true) — 250ms before first note
  *
  * Accompaniment plays the section range with a scheduled delay so the first note
  * lands at the correct musical time after the 3-beat count-in.
  *
  * @param {number} sectionStart - Section start time in seconds
  * @param {number} sectionEnd - Section end time in seconds
- * @param {boolean} withRecording - Whether to also start recording
+ * @param {boolean} withRecording - Whether a recording is already in progress (the
+ *   microphone must already be connected via prepareMicrophone() — see startPractice)
+ * @returns {object} the computed timing, so callers scheduling their own timers (e.g.
+ *   startPractice) can stay exactly consistent with the audio scheduling here instead
+ *   of recomputing the same formula a second time.
  */
 export function playRangeWithBeats(sectionStart, sectionEnd, withRecording = false) {
-    const { firstNoteTime, beatInterval, bpm } = getTimingInfo(sectionStart, sectionEnd);
-
     const ctx = getAudioCtx();
     const now = ctx.currentTime;
+    const timing = computeCountInTiming(sectionStart, sectionEnd, now);
+    const { accDelay, beat1AbsTime, beatInterval } = timing;
 
-    // We want the first note of the section to play at:
-    //   now + accDelay + firstNoteTime
-    // where accDelay is the delay before accompaniment starts, and firstNoteTime is the
-    // offset from sectionStart to the first note.
-    //
-    // Beats:
-    //   Beat 3 (last beat) at firstNoteAbsTime - 0.25 (= 250ms before first note)
-    //   Beat 2 at firstNoteAbsTime - beatInterval - 0.25
-    //   Beat 1 at firstNoteAbsTime - 2×beatInterval - 0.25
-    //
-    // To ensure Beat 1 is in the future: accDelay + firstNoteTime - 2×beatInterval - 0.25 >= 0
-    // => accDelay >= 2×beatInterval + 0.25 - firstNoteTime
-    const minAccDelay = Math.max(2 * beatInterval + 0.25 - firstNoteTime, 0.1);
-    const accDelay = minAccDelay;
-
-    const firstNoteAbsTime = now + accDelay + firstNoteTime;
-
-    // Beat 1, 2, 3: 3 clicks at beatInterval intervals
-    // Beat 3 (the last count-in beat) is at firstNoteAbsTime - 0.25
-    // So Beat 1 = firstNoteAbsTime - 2×beatInterval - 0.25
-    const beat1Time = firstNoteAbsTime - 2 * beatInterval - 0.25;
-    scheduleBeats(ctx, 3, beatInterval, beat1Time);
-
-    // Play accompaniment with delay so the first note lands at firstNoteAbsTime
+    // Play accompaniment with delay so the first note lands at firstNoteAbsTime.
+    // Must run BEFORE scheduleBeats: playRangeDelayed calls stopPlayback() as its
+    // first step, which disconnects every node in the shared playbackNodes list —
+    // if the click nodes were added first, they'd be disconnected here before
+    // they ever get a chance to sound.
     playRangeDelayed(sectionStart, sectionEnd, accDelay);
 
-    // Start recording from Beat 1 of the count-in (metronome beats)
-    // Beat 1 time = accDelay + firstNoteTime - 2*beatInterval - 0.25
-    // Will trim the first 2*beatInterval + 0.25 seconds later to skip all beats
+    // 3 clicks at beatInterval intervals, the last one exactly one beat before the note.
+    scheduleBeats(ctx, 3, beatInterval, beat1AbsTime);
+
     if (withRecording) {
-        const beat1Time = accDelay + firstNoteTime - 2 * beatInterval - 0.25;
-        const recDelay = Math.max(0, beat1Time) * 1000;
-        setTimeout(() => {
-            startMediaRecorder();
-        }, recDelay);
+        // The mic is expected to already be connected (startPractice awaits
+        // prepareMicrophone() before calling this) — this just marks the ctx-time
+        // anchor stopMediaRecorder() uses to compute an accurate trim.
+        recordingAnchorCtxTime = beat1AbsTime;
     }
+
+    return timing;
 }
 
 /**
@@ -291,6 +277,16 @@ let recordedWavBlob = null; // Encoded WAV blob
 let practiceTimerInterval = null;
 let practiceEndTimer = null;
 let isPracticeActive = false;
+// ctx-time (AudioContext.currentTime timeline) the mic buffer actually started, captured
+// from the first onaudioprocess callback — used to compute an accurate trim instead of
+// assuming the buffer start coincides with when we asked for the mic.
+let recordingBufferStartCtxTime = null;
+// ctx-time "beat 1" was scheduled for, set by playRangeWithBeats.
+let recordingAnchorCtxTime = null;
+// Incremented on every startPractice()/interruptPractice() call so an in-flight
+// getUserMedia() promise from a superseded attempt can detect it's stale and back out
+// instead of resurrecting a stream that was supposed to be torn down.
+let practiceSessionId = 0;
 
 function encodeWAV(samples, sampleRate) {
     // Convert Float32Array to 16-bit PCM
@@ -330,22 +326,18 @@ function writeString(view, offset, string) {
     }
 }
 
-function startMediaRecorder() {
-    // Clean up any previous recording
-    stopMediaRecorder();
-
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        console.warn('getUserMedia is not supported in this environment');
-        return;
-    }
-
-    if (!window.isSecureContext) {
-        console.warn('Not a secure context — getUserMedia may be blocked. Use localhost or HTTPS.');
-    }
-
-    // Reset recording state
+/**
+ * Request microphone access and wire up the recording audio graph. Awaited by
+ * startPractice() *before* the count-in starts, so mic-acquisition latency (which varies
+ * a lot by browser/OS/permission state) happens during a visible "準備麥克風中" step
+ * instead of racing silently against the count-in — see the caller for the user-facing
+ * messaging.
+ * @returns {Promise<void>}
+ */
+function prepareMicrophone() {
     audioBuffer = [];
     recordedWavBlob = null;
+    recordingBufferStartCtxTime = null;
 
     const constraints = {
         audio: {
@@ -357,70 +349,44 @@ function startMediaRecorder() {
         }
     };
 
-    navigator.mediaDevices.getUserMedia(constraints)
-        .then(stream => {
-            // Store media stream so we can stop it later
-            mediaStream = stream;
-            
-            // Check if we actually got audio tracks
-            const audioTracks = stream.getAudioTracks();
-            if (audioTracks.length === 0) {
-                throw new Error('No audio input device found');
+    return navigator.mediaDevices.getUserMedia(constraints).then(stream => {
+        const audioTracks = stream.getAudioTracks();
+        if (audioTracks.length === 0) {
+            stream.getTracks().forEach(track => track.stop());
+            throw new Error('No audio input device found');
+        }
+
+        mediaStream = stream;
+        audioContext = getAudioCtx();
+
+        // Resume audio context if suspended (required for autoplay policies)
+        if (audioContext.state === 'suspended') {
+            audioContext.resume().catch(err => console.error('Failed to resume audio context:', err));
+        }
+
+        audioInput = audioContext.createMediaStreamSource(stream);
+
+        const bufferSize = 4096;
+        scriptProcessorNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
+
+        scriptProcessorNode.onaudioprocess = function(e) {
+            if (!isPracticeActive) return; // Stop processing once practice ends/is interrupted
+
+            // Capture the real ctx-time this buffer started on, on the first callback
+            // only — used by stopMediaRecorder() to compute an accurate trim.
+            if (recordingBufferStartCtxTime === null) {
+                recordingBufferStartCtxTime = e.playbackTime;
             }
-        // console.log(`Microphone access granted, using device: ${audioTracks[0].label || 'Unknown'}`);
-            
-            // Use the shared AudioContext from audio.js
-            audioContext = getAudioCtx();
-            
-            // Resume audio context if suspended (required for autoplay policies)
-            if (audioContext.state === 'suspended') {
-                audioContext.resume().catch(err => console.error('Failed to resume audio context:', err));
+
+            const input = e.inputBuffer.getChannelData(0); // Mono - use channel 0
+            for (let i = 0; i < input.length; i++) {
+                audioBuffer.push(input[i]);
             }
-            
-            // Create media stream source
-            audioInput = audioContext.createMediaStreamSource(stream);
-            
-            const bufferSize = 4096;
-            scriptProcessorNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
-            
-            // Process audio data
-            scriptProcessorNode.onaudioprocess = function(e) {
-                if (!isPracticeActive) return; // Stop processing if not actively recording
-                
-                const input = e.inputBuffer.getChannelData(0); // Mono - use channel 0
-                // Log audio levels periodically to see if we're getting sound
-                if (audioBuffer.length % 40960 === 0) { // Every ~0.85 seconds at 48kHz
-                    const recentSamples = input.slice(Math.max(0, input.length - 10));
-                    const hasNonZero = recentSamples.some(sample => Math.abs(sample) > 0.001);
-                    const avgLevel = recentSamples.reduce((sum, sample) => sum + Math.abs(sample), 0) / recentSamples.length;
-        // console.log(`Audio buffer: ${audioBuffer.length} samples, recent non-zero: ${hasNonZero}, avg level: ${avgLevel.toFixed(4)}, recent samples: [${recentSamples.map(x => x.toFixed(3)).join(', ')}]`);
-                }
-                // Log the first buffer to see if we are getting data
-                if (audioBuffer.length === 0) {
-        // console.log('First audio buffer received:', input.length, 'samples');
-        // console.log('First 10 samples:', input.slice(0, 10));
-                    // Also check min/max in first buffer
-                    const minVal = Math.min(...input);
-                    const maxVal = Math.max(...input);
-        // console.log('First buffer range: [', minVal.toFixed(4), ',', maxVal.toFixed(4), ']');
-                }
-                // Copy samples to our buffer
-                for (let i = 0; i < input.length; i++) {
-                    audioBuffer.push(input[i]);
-                }
-            };
-            
-            // Connect the audio graph
-            audioInput.connect(scriptProcessorNode);
-            scriptProcessorNode.connect(audioContext.destination);
-            
-            // Start processing (implicitly starts when connected)
-        // console.log('Audio recording started successfully');
-        })
-        .catch(err => {
-            console.error('Failed to start recording:', err);
-            alert('無法存取麥克風。請確認已允許麥克風權限，並使用 localhost 或 HTTPS 連線。\n錯誤：' + err.message);
-        });
+        };
+
+        audioInput.connect(scriptProcessorNode);
+        scriptProcessorNode.connect(audioContext.destination);
+    });
 }
 
 export function stopMediaRecorder() {
@@ -436,58 +402,70 @@ export function stopMediaRecorder() {
             audioInput = null;
         }
         // Note: We don't close audioContext as it's shared and used for playback
-        
+
         // Stop any media stream tracks (cleanup)
         if (mediaStream) {
-            mediaStream.getTracks().forEach(track => {
-        // console.log(`Stopping media track: ${track.kind}`);
-                track.stop();
-            });
+            mediaStream.getTracks().forEach(track => track.stop());
             mediaStream = null;
         }
-        
+
         // Encode WAV blob if we have audio data
-         if (audioBuffer.length > 0) {
+        if (audioBuffer.length > 0) {
             // Use AudioContext sample rate if available, otherwise default to 44100
             const sampleRate = audioContext ? audioContext.sampleRate : 44100;
-        // console.log('Encoding WAV: sample rate', sampleRate, 'buffer length', audioBuffer.length);
-            
-            // Trim count-in (3-beat lead-in) from the beginning of the recording
-            let bufferToEncode = audioBuffer;
-            if (state.recordingTrimOffset > 0) {
-                const trimSamples = Math.floor(state.recordingTrimOffset * sampleRate);
-                if (trimSamples > 0 && trimSamples < audioBuffer.length) {
-                    bufferToEncode = audioBuffer.slice(trimSamples);
-        // console.log('Trimmed count-in:', trimSamples, 'samples (' + state.recordingTrimOffset.toFixed(3) + 's), remaining:', bufferToEncode.length, 'samples');
-                }
+
+            // Trim the count-in lead-in from the beginning of the recording. Prefer the
+            // *measured* gap between when the mic buffer actually started
+            // (recordingBufferStartCtxTime, captured from the first onaudioprocess call)
+            // and when the count-in's beat 1 was scheduled (recordingAnchorCtxTime) — both
+            // on the same AudioContext.currentTime timeline — over the fixed-duration
+            // fallback, which has no way to account for how long the mic took to connect.
+            let trimSec = state.recordingTrimOffset || 0;
+            if (recordingBufferStartCtxTime != null && recordingAnchorCtxTime != null) {
+                trimSec = Math.max(0, recordingAnchorCtxTime - recordingBufferStartCtxTime);
             }
-            
-            // Analyze audio content
+
+            let bufferToEncode = audioBuffer;
+            const trimSamples = Math.floor(trimSec * sampleRate);
+            if (trimSamples > 0 && trimSamples < audioBuffer.length) {
+                bufferToEncode = audioBuffer.slice(trimSamples);
+            }
+
             const nonZeroCount = bufferToEncode.reduce((count, sample) => Math.abs(sample) > 0.001 ? count + 1 : count, 0);
             const percentNonZero = (nonZeroCount / bufferToEncode.length) * 100;
-            
-            // Calculate RMS (root mean square) as a measure of loudness
-            const sumSquares = bufferToEncode.reduce((sum, sample) => sum + (sample * sample), 0);
-            const rms = Math.sqrt(sumSquares / bufferToEncode.length);
-            
-            // Find peak amplitude (use reduce instead of Math.max with spread to avoid call stack limit)
-            const peak = bufferToEncode.reduce((max, sample) => Math.abs(sample) > max ? Math.abs(sample) : max, 0);
-            
-        // console.log(`Audio analysis: ${nonZeroCount}/${bufferToEncode.length} non-zero samples (${percentNonZero.toFixed(2)}%), RMS: ${rms.toFixed(6)}, Peak: ${peak.toFixed(6)}`);
-            
             if (percentNonZero < 0.1) {
                 console.warn('Warning: Audio appears to be mostly silence - check microphone permissions and input');
             }
-            
+
             recordedWavBlob = encodeWAV(new Float32Array(bufferToEncode), sampleRate);
-        // console.log('Encoded WAV blob size:', recordedWavBlob.size, 'bytes');
             audioBuffer = []; // Clear buffer after encoding
-        } else {
-        // console.log('No audio data to encode');
         }
-        
+
+        recordingBufferStartCtxTime = null;
+        recordingAnchorCtxTime = null;
         resolve();
     });
+}
+
+/**
+ * 顯示/隱藏「錄音中」提示，讓使用者能確認系統目前是否正在聽自己唱歌。
+ * @param {boolean} show
+ */
+function showRecordingBadge(show) {
+    let badge = document.getElementById('recording-badge');
+    if (show) {
+        if (!badge) {
+            const statusEl = document.getElementById('status-text');
+            if (!statusEl || !statusEl.parentNode) return;
+            badge = document.createElement('span');
+            badge.id = 'recording-badge';
+            badge.style.cssText = 'margin-left:8px;color:#e74c3c;font-weight:bold;';
+            badge.textContent = '🔴 錄音中';
+            statusEl.parentNode.insertBefore(badge, statusEl.nextSibling);
+        }
+    } else if (badge) {
+        badge.remove();
+    }
 }
 
 /**
@@ -506,6 +484,7 @@ function cleanupPractice(discardRecording = false) {
         practiceEndTimer = null;
     }
     isPracticeActive = false;
+    showRecordingBadge(false);
     const stopPromise = stopMediaRecorder();
     if (discardRecording) {
         recordedWavBlob = null;
@@ -647,10 +626,50 @@ export function getRecordedAudioBase64() {
 }
 
 /**
- * Start practice: plays accompaniment with 3-beat lead-in, then starts recording.
+ * 排程視覺倒數提示（3、2、1、開始唱！），與音訊排程使用同一組 timing 資訊，
+ * 確保畫面與提示音同步。只有在 practiceSessionId 仍相符時才會實際更新畫面，
+ * 避免使用者已按下中斷後，稍後才顯示過期的倒數文字。
+ * @param {object} timing - playRangeWithBeats() 回傳的 timing 物件
+ * @param {number} mySession - 這次練習的 practiceSessionId
+ */
+function scheduleCountInVisuals(timing, mySession) {
+    const { now, beat1AbsTime, beatInterval, firstNoteAbsTime } = timing;
+    const chartArea = document.getElementById('chart-area');
+    if (!chartArea) return;
+
+    const cueEl = document.createElement('div');
+    cueEl.className = 'count-in-cue';
+    cueEl.style.cssText = 'font-size:56px;font-weight:bold;margin-top:12px;color:#f39c12;';
+    chartArea.appendChild(cueEl);
+
+    const showCue = (text) => {
+        if (mySession !== practiceSessionId) return; // 已被中斷/取代，不再更新畫面
+        const cue = chartArea.querySelector('.count-in-cue');
+        if (cue) cue.textContent = text;
+    };
+
+    const cues = [
+        [beat1AbsTime, '3'],
+        [beat1AbsTime + beatInterval, '2'],
+        [beat1AbsTime + 2 * beatInterval, '1'],
+        [firstNoteAbsTime, '🎤 開始唱！']
+    ];
+    for (const [absTime, text] of cues) {
+        setTimeout(() => showCue(text), Math.max(0, (absTime - now) * 1000));
+    }
+
+    // 開始唱的同時顯示「錄音中」提示，讓使用者確認系統正在聽自己唱歌。
+    setTimeout(() => {
+        if (mySession === practiceSessionId) showRecordingBadge(true);
+    }, Math.max(0, (firstNoteAbsTime - now) * 1000));
+}
+
+/**
+ * Start practice: requests/confirms the microphone first (with the user told what's
+ * happening at each step), then plays accompaniment with a 3-beat lead-in and records.
  * User sings along with the accompaniment and the recording is sent for analysis.
  */
-export function startPractice() {
+export async function startPractice() {
     const { selectedStructure, referenceNotes } = state;
     if (!selectedStructure) {
         alert('請先選擇一個段落或句子');
@@ -660,14 +679,26 @@ export function startPractice() {
         alert('此段落尚無比對資料，請確認已選取正確的聲部');
         return;
     }
+
+    const statusEl = document.getElementById('status-text');
+
+    // 環境檢查：在播放任何東西之前先確認錄音功能可用，避免使用者練習完才發現沒錄到。
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('此瀏覽器不支援錄音功能，請使用最新版 Chrome、Firefox 或 Safari 再試一次。');
+        return;
+    }
+    if (!window.isSecureContext) {
+        alert('目前的連線環境不支援錄音功能，請透過 HTTPS 或 localhost 連線後再試一次。');
+        return;
+    }
+
     const formatTime = (sec) => {
         if (sec == null) return '0:00';
         const m = Math.floor(sec / 60);
         const s = Math.floor(sec % 60);
         return m + ':' + s.toString().padStart(2, '0');
     };
-    const statusText = `練習：${selectedStructure.title}`;
-    document.getElementById('status-text').textContent = statusText;
+
     document.getElementById('chart-area').innerHTML = `
         <div>
             <div style="font-size:48px;margin-bottom:12px;">🎯</div>
@@ -681,7 +712,6 @@ export function startPractice() {
             </div>
         </div>
     `;
-        // console.log('Reference notes for comparison:', referenceNotes);
 
     // 清除之前的練習狀態
     cleanupPractice(true);
@@ -708,18 +738,58 @@ export function startPractice() {
         if (pitchChart) pitchChart.innerHTML = '';
     }
 
-    // 計算練習時間參數（與 playRangeWithBeats 一致）
+    // 這次練習的識別碼：若使用者在等待麥克風權限時按下中斷，
+    // interruptPractice() 會讓 practiceSessionId 不再相符，藉此偵測並中止。
+    const mySession = ++practiceSessionId;
+
+    // 先確認麥克風可用，再開始提示音/伴奏 —— 讓 getUserMedia() 的不確定延遲
+    // 發生在明確告知使用者「準備中」的階段，而不是悄悄跟倒數提示音賽跑。
+    statusEl.textContent = '準備麥克風中，請允許瀏覽器使用麥克風權限…';
+    try {
+        await prepareMicrophone();
+    } catch (err) {
+        console.error('Failed to start recording:', err);
+        statusEl.textContent = '無法使用麥克風';
+        document.getElementById('chart-area').innerHTML = `
+            <div>
+                <div style="font-size:48px;margin-bottom:12px;">🎤🚫</div>
+                <div>無法取得麥克風權限</div>
+                <div style="color:#888;font-size:13px;margin-top:8px;">
+                    請確認已允許此網站使用麥克風，並確認裝置已連接麥克風後再試一次。
+                </div>
+                <div style="color:#555;font-size:11px;margin-top:6px;">${err.message || ''}</div>
+            </div>
+        `;
+        return;
+    }
+
+    // 等待麥克風權限期間，使用者可能已按下中斷或重新開始了另一次練習。
+    if (mySession !== practiceSessionId) {
+        stopMediaRecorder();
+        return;
+    }
+
+    statusEl.textContent = `練習：${selectedStructure.title}`;
+
     const duration = selectedStructure.end - selectedStructure.start;
-    const { firstNoteTime, beatInterval } = getTimingInfo(selectedStructure.start, selectedStructure.end);
-    const minAccDelay = Math.max(2 * beatInterval + 0.25 - firstNoteTime, 0.1);
-    const accDelay = minAccDelay;
-    // 錄音開始時間（從第一個提示音 Beat 1 開始）
-    const beat1Time = Math.max(0, accDelay + firstNoteTime - 2 * beatInterval - 0.25);
-    const recStartDelay = beat1Time;
-    // 截除偏移：從 Beat 1 到 Beat 3 結束的時間
-    const recordingTrimOffset = 2 * beatInterval + 0.25;
-    // 練習結束時間 = 錄音開始 + 截除偏移 + 練習範圍時長
-    const practiceTotalMs = (recStartDelay + recordingTrimOffset + duration) * 1000;
+
+    // Resume audio context if suspended
+    const audioCtx = getAudioCtx();
+    if (audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(err => console.error('Failed to resume audio context:', err));
+    }
+
+    isPracticeActive = true;
+
+    // Auto-play the range with beats + recording; playRangeWithBeats returns the exact
+    // timing it scheduled so the timers below stay perfectly consistent with the audio.
+    const timing = playRangeWithBeats(selectedStructure.start, selectedStructure.end, true);
+    const { firstNoteTime, beat1AbsTime, recordingTrimSec, now } = timing;
+
+    scheduleCountInVisuals(timing, mySession);
+
+    const recStartDelay = Math.max(0, beat1AbsTime - now);
+    const practiceTotalMs = (recStartDelay + recordingTrimSec + duration) * 1000;
 
     // 啟動秒數動畫（倒數計時）— 從錄音截除後開始計時
     const timerEl = document.getElementById('timer');
@@ -733,50 +803,38 @@ export function startPractice() {
             }
             if (timerEl) timerEl.textContent = formatTime(remaining);
         }, 100);
-    }, Math.max(0, (recStartDelay + recordingTrimOffset) * 1000));
+    }, Math.max(0, (recStartDelay + recordingTrimSec) * 1000));
 
-    // 設定練習結束時間（錄音結束後仍繼續錄到練習結束）
-     // Resume audio context if suspended
-     const audioCtx = getAudioCtx();
-     if (audioCtx.state === 'suspended') {
-         audioCtx.resume().catch(err => console.error('Failed to resume audio context:', err));
-     }
-     
-     // 存儲錄音時間資訊，用於後端音符比對的時間對齉
-     state.recordingTrimOffset = recordingTrimOffset;
-     state.recordingStartTime = selectedStructure.start + firstNoteTime;
-     isPracticeActive = true;
+    // 存儲錄音時間資訊，用於後端音符比對的時間對齊
+    state.recordingTrimOffset = recordingTrimSec;
+    state.recordingStartTime = selectedStructure.start + firstNoteTime;
+
     practiceEndTimer = setTimeout(() => {
         cleanupPractice(false).then(() => { // 保留錄音，等待 MediaRecorder onstop 完成
             // 分析並提交錄音
-            analyzeAndSubmitRecording().then(result => {
-                // 分析完成後顯示回放按鈕
+            analyzeAndSubmitRecording().then(() => {
+                // 分析完成後顯示回放按鈕（狀態文字已由 analyzeAndSubmitRecording 設定）
                 showReplayButton();
-                document.getElementById('status-text').textContent = '分析完成';
-                // 顯示覆蓋提示訊息
                 if (window.updateWarningVisibility) {
                     window.updateWarningVisibility();
                 }
             }).catch(error => {
                 // 分析失敗時仍顯示回放按鈕並顯示錯誤
                 showReplayButton();
-                document.getElementById('status-text').textContent = '分析失敗: ' + error.message;
-                // 顯示覆蓋提示訊息
+                statusEl.textContent = '分析失敗: ' + error.message;
                 if (window.updateWarningVisibility) {
                     window.updateWarningVisibility();
                 }
             });
         });
     }, practiceTotalMs);
-
-    // Auto-play the range with beats + recording
-    playRangeWithBeats(selectedStructure.start, selectedStructure.end, true);
 }
 
 /**
  * 中斷練習：停止播放、停止錄音、丟棄錄音資料、timer 歸零
  */
 export function interruptPractice() {
+    practiceSessionId++; // 讓等待中的 prepareMicrophone()/視覺倒數偵測到已被中斷
     cleanupPractice(true); // 丟棄錄音
     stopAudioProcess(AudioProcess.PRACTICE_PLAYBACK);
     stopAudioProcess(AudioProcess.RECORDING_REPLAY);
@@ -837,16 +895,6 @@ export async function analyzeAndSubmitRecording() {
             throw new Error('無可用的參考音符進行分析');
         }
         
-        // 取得音訊樣本率 (從 AudioContext 取得)
-        const audioContext = getAudioCtx();
-        const sampleRate = audioContext ? audioContext.sampleRate : 44100;
-        
-        // Log what we're about to send to the API
-        // console.log('Sending to API - audio length:', audioBase64.length, 'base64 chars, reference notes:', referenceNotes.length);
-        // console.log('First reference note sample:', referenceNotes[0]);
-        // console.log('Recording start time offset:', state.recordingStartTime);
-        // console.log('Recording trim offset:', state.recordingTrimOffset);
-        
         // 共用的請求 body
         const commonBody = {
             audio_data: audioBase64,
@@ -881,31 +929,46 @@ export async function analyzeAndSubmitRecording() {
         
         // 更新分析結果 UI - 顯示兩種評估結果
         updateAnalysisResultsUI(vowelAssessmentResult, basicAssessmentResult);
-        
-        // 可選：自動提交評估結果到歷史記錄
-        // 註解掉此部分如果只想顯示分析而不儲存
-        /*
-        await api('/assessments/submit', {
-            method: 'POST',
-            body: JSON.stringify({
-                song_id: state.currentSongId,
-                structure_id: state.selectedStructure?.id || null,
-                track_id: state.selectedTrackId,
-                score: analysisResult.Score,
-                total_notes: analysisResult.TotalNotes,
-                matched_notes: analysisResult.MatchedNotes,
-                average_pitch_deviation: analysisResult.AveragePitchDeviation,
-                average_duration_deviation: analysisResult.AverageDurationDeviation,
-                pitch_deviation: analysisResult.PitchDeviation,
-                duration_deviation: analysisResult.DurationDeviation,
-                note_comparison: analysisResult.NoteComparison
-            })
-        });
-        */
-        
-        // 更新狀態
-        document.getElementById('status-text').textContent = '分析完成';
-        
+
+        // 儲存至練習紀錄：優先使用母音過濾結果，若失敗則退回基本比對結果。
+        const resultToSave = vowelAssessmentResult || basicAssessmentResult;
+        let savedToHistory = false;
+        if (resultToSave) {
+            try {
+                // selectedStructure.id 可能是 selection.js 產生的合成 id
+                // (格式為 'sel-<timestamp>')，代表整段/自訂選取範圍而非真實
+                // structure，此時應送出 null，否則伺服器端 UUID 解析會直接失敗。
+                const rawStructureId = state.selectedStructure?.id;
+                const structureId = (rawStructureId && !rawStructureId.startsWith('sel-'))
+                    ? rawStructureId
+                    : null;
+                await api('/assessments/submit', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        song_id: state.currentSongId,
+                        structure_id: structureId,
+                        track_id: state.selectedTrackId,
+                        score: resultToSave.score,
+                        total_notes: resultToSave.total_notes,
+                        matched_notes: resultToSave.matched_notes,
+                        average_pitch_deviation: resultToSave.average_pitch_deviation,
+                        average_duration_deviation: resultToSave.average_duration_deviation,
+                        pitch_deviation: resultToSave.pitch_deviation,
+                        duration_deviation: resultToSave.duration_deviation,
+                        note_comparison: resultToSave.note_comparison
+                    })
+                });
+                savedToHistory = true;
+            } catch (err) {
+                console.error('Failed to save assessment history:', err);
+            }
+        }
+
+        // 更新狀態：明確告知使用者這次結果是否有被保留，避免誤以為已存入紀錄。
+        document.getElementById('status-text').textContent = savedToHistory
+            ? '分析完成，已加入練習紀錄'
+            : '分析完成，但儲存紀錄失敗（本次結果不會保留）';
+
         return { vowelAssessmentResult, basicAssessmentResult };
     } catch (error) {
         console.error('分析錄音時發生錯誤:', error);
@@ -967,6 +1030,26 @@ function normalizeNoteComparison(noteComparison) {
 }
 
 /**
+ * 將音高偏差與音符匹配數字翻譯成一般使用者能理解、能採取行動的一句話。
+ * Cents 門檻與音高偏差圖例一致：<50 良好、50-100 尚可、>100 需改善。
+ */
+function buildPlainLanguageSummary(matchedNotes, totalNotes, avgPitchDev) {
+    const absDev = Math.abs(avgPitchDev);
+    const missedNotes = Math.max(0, totalNotes - matchedNotes);
+    const missedNote = missedNotes > 0
+        ? `；有 ${missedNotes}/${totalNotes} 個音符沒有比對成功，可以放慢速度再試一次`
+        : '';
+
+    if (absDev < 50) {
+        return `🎉 音準掌握得很好（平均偏差 ${absDev.toFixed(0)} cents），繼續保持！${missedNote}`;
+    }
+    if (absDev < 100) {
+        return `👍 音準大致抓到了（平均偏差 ${absDev.toFixed(0)} cents），還可以再更精準一些${missedNote}`;
+    }
+    return `💡 平均音高偏差 ${absDev.toFixed(0)} cents，建議放慢速度多練習這句${missedNote}`;
+}
+
+/**
  * 更新分析結果到 UI
  * 顯示兩種評估結果：母音過濾 vs 基本（無過濾）
  * @param {Object|null} vowelResult - 母音過濾評估結果
@@ -997,6 +1080,9 @@ function updateAnalysisResultsUI(vowelResult, basicResult) {
     const chartArea = document.getElementById('chart-area');
     chartArea.innerHTML = `
         <div class="viz-container">
+            <div class="viz-plain-summary" style="margin-bottom:12px;font-size:14px;color:#ddd;">
+                ${buildPlainLanguageSummary(matchedNotes, totalNotes, avgPitchDev)}
+            </div>
             <div class="viz-score">
                 <div class="viz-title">分數</div>
                 <div id="score-gauge"></div>
@@ -1051,13 +1137,19 @@ function updateAnalysisResultsUI(vowelResult, basicResult) {
         if (body) {
             body.innerHTML = `
                 <div class="assessment-comparison">
-                    <h3 style="color:#fff;margin:0 0 12px 0;font-size:16px;">練習評估結果</h3>
+                    <h3 style="color:#fff;margin:0 0 12px 0;font-size:16px;display:flex;justify-content:space-between;align-items:center;">
+                        練習評估結果
+                        <button id="retry-practice-btn" class="btn btn-sm btn-success">🔁 再次練習這句</button>
+                    </h3>
                     <div class="results-grid-two">
                         ${renderAssessmentCard(vowelNorm, '母音過濾', normalizedNoteComparison)}
                         ${renderAssessmentCard(basicNorm, '基本比對', basicNorm ? normalizeNoteComparison(basicNorm.noteComparison) : [])}
                     </div>
                 </div>
             `;
+            // 直接重新練習目前選取的段落，不需捲動回結構樹重新點擊。
+            const retryBtn = document.getElementById('retry-practice-btn');
+            if (retryBtn) retryBtn.onclick = () => startPractice();
         }
         
         // 繪製母音過濾版本的音符比對表格

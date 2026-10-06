@@ -185,8 +185,13 @@ func (h *AuthHandler) validateToken(token string) (uuid.UUID, error) {
 
 	var claims struct {
 		Sub string `json:"sub"`
+		Exp int64  `json:"exp"`
 	}
 	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
+		return uuid.Nil, ErrInvalidToken
+	}
+
+	if claims.Exp != 0 && time.Now().Unix() > claims.Exp {
 		return uuid.Nil, ErrInvalidToken
 	}
 

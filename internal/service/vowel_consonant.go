@@ -61,12 +61,14 @@ func (v *VowelConsonantSeparator) SeparateVowelsConsonants(
 		noteSamples := samples[startSample:endSample]
 
 		// Analyze the note to determine if it's a vowel
-		isVowel, vowelDuration := v.analyzeNoteForVowel(noteSamples, sampleRate)
+		isVowel, vowelDuration, vowelOffsetSec := v.analyzeNoteForVowel(noteSamples, sampleRate)
 
 		if isVowel && vowelDuration > 0 {
-			// Calculate the actual vowel portion within the note
-			vowelStart := note.StartTime
-			vowelEnd := note.StartTime + vowelDuration
+			// Calculate the actual vowel portion within the note, anchored at
+			// the first vowel-like window rather than assuming it starts at
+			// the note's onset (wrong for notes starting on a consonant).
+			vowelStart := note.StartTime + vowelOffsetSec
+			vowelEnd := vowelStart + vowelDuration
 
 			// Ensure we don't exceed note boundaries
 			if vowelEnd > note.EndTime {
@@ -90,11 +92,14 @@ func (v *VowelConsonantSeparator) SeparateVowelsConsonants(
 	return vowelSegments, nil
 }
 
-// analyzeNoteForVowel determines if a note contains a vowel and returns the vowel duration
+// analyzeNoteForVowel determines if a note contains a vowel and returns the vowel
+// duration plus the offset (in seconds, from the start of samples) of the first
+// window classified as vowel-like — the vowel doesn't necessarily start at the
+// note's onset (e.g. notes beginning on a voiced consonant like /m/ or /l/).
 // Uses simplified spectral analysis based on energy distribution
-func (v *VowelConsonantSeparator) analyzeNoteForVowel(samples []float64, sampleRate int) (bool, float64) {
+func (v *VowelConsonantSeparator) analyzeNoteForVowel(samples []float64, sampleRate int) (bool, float64, float64) {
 	if len(samples) < 1024 {
-		return false, 0
+		return false, 0, 0
 	}
 
 	// Calculate RMS energy
@@ -105,7 +110,7 @@ func (v *VowelConsonantSeparator) analyzeNoteForVowel(samples []float64, sampleR
 	rms = math.Sqrt(rms / float64(len(samples)))
 
 	if rms < v.energyThreshold {
-		return false, 0
+		return false, 0, 0
 	}
 
 	// Analyze the note in windows to find vowel portions
@@ -113,6 +118,7 @@ func (v *VowelConsonantSeparator) analyzeNoteForVowel(samples []float64, sampleR
 	hopSize := 512
 	vowelWindows := 0
 	totalWindows := 0
+	firstVowelStart := -1
 
 	for start := 0; start+windowSize <= len(samples); start += hopSize {
 		totalWindows++
@@ -122,11 +128,14 @@ func (v *VowelConsonantSeparator) analyzeNoteForVowel(samples []float64, sampleR
 		// Vowels typically have more stable energy than consonants
 		if v.detectVowelInWindow(window, sampleRate) {
 			vowelWindows++
+			if firstVowelStart == -1 {
+				firstVowelStart = start
+			}
 		}
 	}
 
 	if totalWindows == 0 {
-		return false, 0
+		return false, 0, 0
 	}
 
 	// Calculate vowel ratio
@@ -135,10 +144,14 @@ func (v *VowelConsonantSeparator) analyzeNoteForVowel(samples []float64, sampleR
 	// If more than 30% of the note contains vowel-like characteristics
 	if vowelRatio > 0.3 {
 		vowelDuration := vowelRatio * (float64(len(samples)) / float64(sampleRate))
-		return true, vowelDuration
+		vowelOffsetSec := 0.0
+		if firstVowelStart > 0 {
+			vowelOffsetSec = float64(firstVowelStart) / float64(sampleRate)
+		}
+		return true, vowelDuration, vowelOffsetSec
 	}
 
-	return false, 0
+	return false, 0, 0
 }
 
 // detectVowelInWindow analyzes a single window to detect vowel characteristics

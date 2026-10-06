@@ -56,6 +56,7 @@ function bindEventListeners() {
     document.getElementById('import-file').addEventListener('change', (e) => {
         handleImport(e.target);
     });
+    document.getElementById('btn-clear-structures').addEventListener('click', handleClearAllStructures);
 
     // 編輯面板按鈕
     document.getElementById('btn-save-edit').addEventListener('click', saveEdit);
@@ -263,7 +264,11 @@ function handleEdit(id, type) {
     document.getElementById('edit-end').value = node.end_time || 0;
     document.getElementById('edit-start-tick').value = node.start_tick || 0;
     document.getElementById('edit-end-tick').value = node.end_tick || 0;
-    document.getElementById('edit-start').dispatchEvent(new Event('input'));
+    // Do NOT dispatch an 'input' event here: the tick fields above are already
+    // the node's authoritative stored values. Dispatching would fire
+    // recalcTicks() and silently overwrite them with a recomputed value that
+    // can differ from the stored tick (tempo-map rounding), corrupting
+    // start_tick/end_tick on saves that only touched unrelated fields (e.g. title).
     document.getElementById('edit-order').value = node.order_index || 0;
     document.getElementById('edit-lyrics').value = node.lyrics || '';
 
@@ -450,62 +455,27 @@ async function saveEdit() {
                     }]
                 });
             } else if (type === 'PHRASE' && parentId) {
-                if (parentSection) {
-                    const existingPhrases = (parentSection.phrases || []).map(p => ({
-                        type: p.type,
-                        title: p.title,
-                        start_time: p.start_time,
-                        end_time: p.end_time,
-                        start_tick: p.start_tick || 0,
-                        end_tick: p.end_tick || 0,
-                        order_index: p.order_index
-                    }));
-                    // DELETE old parent, POST new parent with phrases
-                    await SongService.deleteStructure(currentSongId, parentId);
-                    await SongService.createStructures(currentSongId, {
-                        structures: [{
-                            type: 'SECTION',
-                            title: parentSection.title,
-                            start_time: parentSection.start_time,
-                            end_time: parentSection.end_time,
-                            start_tick: parentSection.start_tick || 0,
-                            end_tick: parentSection.end_tick || 0,
-                            order_index: parentSection.order_index,
-                            phrases: [
-                                ...existingPhrases,
-                                {
-                                    type: 'PHRASE',
-                                    title,
-                                    start_time: startTime,
-                                    end_time: endTime,
-                                    start_tick: startTick,
-                                    end_tick: endTick,
-                                    order_index: orderIdx
-                                }
-                            ]
-                        }]
-                    });
-                }
-            }
-
-            // 儲存新 PHRASE 的歌詞
-            if (type === 'PHRASE' && editLyrics && trackId) {
-                await onTrackChange(); // 重新取得結構，取得新 ID
-                const updatedParent = structures.find(s => s.id === parentId);
-                if (updatedParent && updatedParent.phrases) {
-                    const matched = updatedParent.phrases.find(p =>
-                        p.title === title &&
-                        Number(p.start_time) === Number(startTime) &&
-                        Number(p.end_time) === Number(endTime)
-                    );
-                    if (matched) {
-                        await SongService.saveLyrics(currentSongId, [{
-                            track_id: trackId,
-                            structure_id: matched.id,
-                            lyrics: editLyrics
-                        }]);
-                    }
-                }
+                // 直接把新樂句掛在既有段落底下。
+                // 舊版做法是「刪除父段落 → 重建父段落＋所有樂句」，
+                // 重建後每個樂句都拿到新的 UUID，而歌詞是以 structure_id 對應的，
+                // 因此整段的歌詞全部變成孤兒資料而消失（同時 track_id 也被丟掉）。
+                // 現在只新增這一筆樂句，其他樂句的 ID 與歌詞都完整保留。
+                await SongService.createStructures(currentSongId, {
+                    structures: [{
+                        type: 'PHRASE',
+                        parent_id: parentId,
+                        title,
+                        start_time: startTime,
+                        end_time: endTime,
+                        start_tick: startTick,
+                        end_tick: endTick,
+                        order_index: orderIdx,
+                        track_id: effectiveTrackId,
+                        lyrics: (editLyrics && effectiveTrackId)
+                            ? [{ track_id: effectiveTrackId, lyrics: editLyrics }]
+                            : []
+                    }]
+                });
             }
         } else {
             // --- 編輯現有 ---
@@ -536,7 +506,7 @@ async function saveEdit() {
         cancelEdit();
         await onTrackChange();
     } catch (err) {
-        alert('儲存失敗：' + err.message);
+        UIErrorHandler.notify(err);
     }
 }
 
@@ -554,7 +524,7 @@ async function handleDelete(id, title) {
         await SongService.deleteStructure(currentSongId, id);
         await onTrackChange();
     } catch (err) {
-        alert('刪除失敗：' + err.message);
+        UIErrorHandler.notify(err);
     }
 }
 
@@ -596,14 +566,27 @@ async function handleImport(fileInput) {
         UIStatus.setImportResult(`✅ 已匯入 ${res.imported} 筆結構`, 'success');
         await onTrackChange();
     } catch (err) {
-        // 處理 409 衝突等
-        if (err.status === 409 && err.data) {
+        if (err.status === 401) {
+            UIErrorHandler.notify(err);
+        } else if (err.status === 409 && err.data) {
+            // 處理 409 衝突：importCSV 預設 force=false，衝突時才會走到這裡
             let msg = '⚠️ 偵測到時間範圍衝突：\n';
             for (const c of (err.data.conflicts || [])) {
                 msg += `\n- 「${c.existing_title}」(${c.existing_start}s-${c.existing_end}s) vs 「${c.incoming_title}」(${c.incoming_start}s-${c.incoming_end}s)`;
             }
             UIStatus.setImportResult('⚠️ 衝突', 'error');
-            alert(msg);
+            if (confirm(msg + '\n\n是否強制覆蓋？')) {
+                try {
+                    const text2 = await file.text();
+                    const res2 = await SongService.importCSV(currentSongId, text2, true);
+                    UIStatus.setImportResult(`✅ 已匯入 ${res2.imported} 筆結構（已覆蓋衝突）`, 'success');
+                    await onTrackChange();
+                } catch (err2) {
+                    UIErrorHandler.notify(err2);
+                }
+            } else {
+                UIStatus.setImportResult('⚠️ 已取消匯入（衝突）', 'error');
+            }
         } else if (err.data && err.data.missing_tracks) {
             let msg = '❌ 找不到聲部：' + err.data.missing_tracks.join(', ');
             msg += '\n\n可用聲部：\n' + err.data.available_tracks.map(t => `- ${t.name}`).join('\n');
@@ -611,10 +594,51 @@ async function handleImport(fileInput) {
             alert(msg);
         } else {
             UIStatus.setImportResult('❌ 匯入失敗：' + err.message, 'error');
-            alert('匯入失敗：' + err.message);
+            UIErrorHandler.notify(err);
         }
     }
     fileInput.value = '';
+}
+
+// --- 清空整首歌所有聲部的段落結構（匯入 CSV 前的重置）---
+async function handleClearAllStructures() {
+    if (!currentSongId) {
+        alert('請先選擇歌曲');
+        return;
+    }
+
+    // 先做一次不帶 confirm 的呼叫，取得將被刪除的數量供使用者確認
+    let summary;
+    try {
+        summary = await SongService.deleteAllStructures(currentSongId, false);
+    } catch (err) {
+        summary = err.data || {};
+    }
+
+    const total = summary.total || 0;
+    if (total === 0) {
+        UIStatus.setImportResult('ℹ️ 此歌曲目前沒有段落結構，可直接匯入 CSV', 'success');
+        return;
+    }
+
+    const msg = `確定要清空「所有聲部」的段落結構嗎？\n\n`
+        + `段落 (SECTION)：${summary.section_count || 0}\n`
+        + `樂句 (PHRASE)：${summary.phrase_count || 0}\n`
+        + `合計：${total} 筆，並會一併刪除所有歌詞。\n\n`
+        + `此操作無法復原。建議先「📥 匯出 CSV」備份。`;
+    if (!confirm(msg)) return;
+
+    try {
+        const res = await SongService.deleteAllStructures(currentSongId, true);
+        UIStatus.setImportResult(
+            `✅ 已清空 ${res.deleted} 筆結構（含 ${res.lyrics_deleted} 筆歌詞），可以開始匯入 CSV`,
+            'success'
+        );
+        await onTrackChange();
+    } catch (err) {
+        UIStatus.setImportResult('❌ 清空失敗：' + err.message, 'error');
+        UIErrorHandler.notify(err);
+    }
 }
 
 // --- 複製結構（顯示對話框）---
@@ -649,7 +673,7 @@ async function handleCopyStructures() {
         div.innerHTML = html;
         document.body.appendChild(div.firstElementChild);
     } catch (err) {
-        alert('無法載入聲部資訊：' + err.message);
+        UIErrorHandler.notify(err);
     }
 }
 
@@ -705,7 +729,7 @@ window.__copyStructuresFromTrack = async function(sourceTrackId, sourceTrackName
         await onTrackChange();
         alert('✅ 段落結構已複製完成');
     } catch (err) {
-        alert('複製失敗：' + err.message);
+        UIErrorHandler.notify(err);
     }
 };
 

@@ -94,6 +94,13 @@ export const SongService={
         });
     },
 
+    /** 清空整首歌所有聲部的段落結構與歌詞（匯入 CSV 前的重置） */
+    deleteAllStructures(songId, confirm = true) {
+        return this._request(`/admin/songs/${songId}/structures?confirm=${confirm}`, {
+            method: 'DELETE'
+        });
+    },
+
     /** 儲存歌詞 (支援單句或段落批次) */
     saveLyrics(songId, lyricsPayload) {
         return this._request(`/admin/songs/${songId}/lyrics`, {
@@ -110,7 +117,7 @@ export const SongService={
     },
 
     /** 匯入 CSV 並處理衝突  */
-    importCSV(songId, csvText, force = true) {
+    importCSV(songId, csvText, force = false) {
         return this._request(`/admin/songs/${songId}/structures/import?force=${force}`, {
             method: 'POST',
             headers: { 'Content-Type': 'text/csv' },
